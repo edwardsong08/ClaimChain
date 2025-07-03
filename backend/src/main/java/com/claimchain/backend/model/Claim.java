@@ -26,6 +26,11 @@ public class Claim {
 
     private LocalDateTime submittedAt = LocalDateTime.now();
 
+    // 🔗 New field to link claim to a user
+    @ManyToOne
+    @JoinColumn(name = "user_id") // foreign key column in claims table
+    private User user;
+
     // Constructors
     public Claim() {}
 
@@ -59,4 +64,7 @@ public class Claim {
 
     public LocalDateTime getSubmittedAt() { return submittedAt; }
     public void setSubmittedAt(LocalDateTime submittedAt) { this.submittedAt = submittedAt; }
+
+    public User getUser() { return user; }
+    public void setUser(User user) { this.user = user; }
 }
