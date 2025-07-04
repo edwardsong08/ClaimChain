@@ -17,6 +17,9 @@ public class Claim {
     private String debtorEmail;
     private String debtorPhone;
 
+    private String clientName;       // ✅ newly added
+    private String clientContact;    // ✅ newly added
+
     private String serviceDescription;
     private BigDecimal amountOwed;
     private LocalDate dateOfService;
@@ -46,6 +49,12 @@ public class Claim {
 
     public String getDebtorPhone() { return debtorPhone; }
     public void setDebtorPhone(String debtorPhone) { this.debtorPhone = debtorPhone; }
+
+    public String getClientName() { return clientName; }
+    public void setClientName(String clientName) { this.clientName = clientName; }
+
+    public String getClientContact() { return clientContact; }
+    public void setClientContact(String clientContact) { this.clientContact = clientContact; }
 
     public String getServiceDescription() { return serviceDescription; }
     public void setServiceDescription(String serviceDescription) { this.serviceDescription = serviceDescription; }

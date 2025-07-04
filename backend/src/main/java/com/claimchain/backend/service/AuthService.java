@@ -37,7 +37,7 @@ public class AuthService {
         user.setRole(role);
 
         userRepository.save(user);
-        return jwtService.generateToken(email);
+        return jwtService.generateToken(user); // 🔁 Updated
     }
 
     public String login(String email, String password) {
@@ -45,6 +45,7 @@ public class AuthService {
             new UsernamePasswordAuthenticationToken(email, password)
         );
 
-        return jwtService.generateToken(email);
+        User user = userRepository.findByEmail(email);
+        return jwtService.generateToken(user); // 🔁 Updated
     }
 }
