@@ -1,5 +1,6 @@
 package com.claimchain.backend.service;
 
+import com.claimchain.backend.dto.RegisterRequest;
 import com.claimchain.backend.model.Role;
 import com.claimchain.backend.model.User;
 import com.claimchain.backend.repository.UserRepository;
@@ -25,19 +26,29 @@ public class AuthService {
     @Autowired
     private AuthenticationManager authenticationManager;
 
-    public String register(String name, String email, String password, Role role) {
-        if (userRepository.findByEmail(email) != null) {
+    public String register(RegisterRequest request, Role role) {
+        if (userRepository.findByEmail(request.getEmail()) != null) {
             throw new RuntimeException("Email already registered.");
         }
 
         User user = new User();
-        user.setName(name);
-        user.setEmail(email);
-        user.setPassword(passwordEncoder.encode(password));
+        user.setName(request.getName());
+        user.setEmail(request.getEmail());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole(role);
 
+        // Optional fields
+        user.setBusinessName(request.getBusinessName());
+        user.setPhone(request.getPhone());
+        user.setAddress(request.getAddress());
+        user.setEinOrLicense(request.getEinOrLicense());
+        user.setBusinessType(request.getBusinessType());
+
+        // Default to unverified at signup
+        user.setVerified(false);
+
         userRepository.save(user);
-        return jwtService.generateToken(user); // 🔁 Updated
+        return jwtService.generateToken(user);
     }
 
     public String login(String email, String password) {
@@ -46,6 +57,6 @@ public class AuthService {
         );
 
         User user = userRepository.findByEmail(email);
-        return jwtService.generateToken(user); // 🔁 Updated
+        return jwtService.generateToken(user);
     }
 }

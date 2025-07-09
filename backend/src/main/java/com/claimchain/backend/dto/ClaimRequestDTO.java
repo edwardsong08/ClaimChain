@@ -1,75 +1,61 @@
 package com.claimchain.backend.dto;
 
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.*;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 
 public class ClaimRequestDTO {
 
     @NotBlank
-    private String debtorName;
-
-    @Email
-    @NotBlank
-    private String debtorEmail;
+    private String clientName;
 
     @NotBlank
-    private String debtorPhone;
+    private String clientContact;
+
+    @NotNull
+    @DecimalMin(value = "0.01", inclusive = true)
+    private BigDecimal amount;
+
+    @NotNull
+    private LocalDate dateOfDefault;
 
     @NotBlank
-    private String serviceDescription;
+    private String debtType;
 
     @NotBlank
-    private String amountOwed;
+    private String clientAddress;
 
     @NotBlank
-    private String dateOfService;
+    private String contactHistory;
+
+    // Scaffold for tomorrow — this can be used later to link uploaded file
+    private String contractFileKey;
+
+    public ClaimRequestDTO() {}
 
     // Getters and Setters
-    public String getDebtorName() {
-        return debtorName;
-    }
 
-    public void setDebtorName(String debtorName) {
-        this.debtorName = debtorName;
-    }
+    public String getClientName() { return clientName; }
+    public void setClientName(String clientName) { this.clientName = clientName; }
 
-    public String getDebtorEmail() {
-        return debtorEmail;
-    }
+    public String getClientContact() { return clientContact; }
+    public void setClientContact(String clientContact) { this.clientContact = clientContact; }
 
-    public void setDebtorEmail(String debtorEmail) {
-        this.debtorEmail = debtorEmail;
-    }
+    public BigDecimal getAmount() { return amount; }
+    public void setAmount(BigDecimal amount) { this.amount = amount; }
 
-    public String getDebtorPhone() {
-        return debtorPhone;
-    }
+    public LocalDate getDateOfDefault() { return dateOfDefault; }
+    public void setDateOfDefault(LocalDate dateOfDefault) { this.dateOfDefault = dateOfDefault; }
 
-    public void setDebtorPhone(String debtorPhone) {
-        this.debtorPhone = debtorPhone;
-    }
+    public String getDebtType() { return debtType; }
+    public void setDebtType(String debtType) { this.debtType = debtType; }
 
-    public String getServiceDescription() {
-        return serviceDescription;
-    }
+    public String getClientAddress() { return clientAddress; }
+    public void setClientAddress(String clientAddress) { this.clientAddress = clientAddress; }
 
-    public void setServiceDescription(String serviceDescription) {
-        this.serviceDescription = serviceDescription;
-    }
+    public String getContactHistory() { return contactHistory; }
+    public void setContactHistory(String contactHistory) { this.contactHistory = contactHistory; }
 
-    public String getAmountOwed() {
-        return amountOwed;
-    }
-
-    public void setAmountOwed(String amountOwed) {
-        this.amountOwed = amountOwed;
-    }
-
-    public String getDateOfService() {
-        return dateOfService;
-    }
-
-    public void setDateOfService(String dateOfService) {
-        this.dateOfService = dateOfService;
-    }
+    public String getContractFileKey() { return contractFileKey; }
+    public void setContractFileKey(String contractFileKey) { this.contractFileKey = contractFileKey; }
 }

@@ -1,42 +1,22 @@
-package com.claimchain.backend.model;
+package com.claimchain.backend.dto;
 
-import jakarta.persistence.*;
-import java.util.HashSet;
-import java.util.Set;
-
-@Entity
-@Table(name = "users")
-public class User {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public class RegisterRequest {
 
     private String name;
-
-    @Column(unique = true)
     private String email;
-
     private String password;
+    private String role; // Accept "SERVICE_PROVIDER" or "COLLECTION_AGENCY"
+    private String businessName;
 
-    @Enumerated(EnumType.STRING)
-    private Role role;
-
+    // Optional for now – can be completed later for verification
     private String phone;
     private String address;
     private String einOrLicense;
     private String businessType;
-    private boolean isVerified = false;
-    private String businessName;
 
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    private Set<Claim> claims = new HashSet<>();
-
-    public User() {}
+    public RegisterRequest() {}
 
     // Getters and Setters
-    public Long getId() { return id; }
-
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
 
@@ -46,8 +26,11 @@ public class User {
     public String getPassword() { return password; }
     public void setPassword(String password) { this.password = password; }
 
-    public Role getRole() { return role; }
-    public void setRole(Role role) { this.role = role; }
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
+
+    public String getBusinessName() { return businessName; }
+    public void setBusinessName(String businessName) { this.businessName = businessName; }
 
     public String getPhone() { return phone; }
     public void setPhone(String phone) { this.phone = phone; }
@@ -60,13 +43,4 @@ public class User {
 
     public String getBusinessType() { return businessType; }
     public void setBusinessType(String businessType) { this.businessType = businessType; }
-
-    public boolean isVerified() { return isVerified; }
-    public void setVerified(boolean verified) { isVerified = verified; }
-
-    public String getBusinessName() { return businessName; }
-    public void setBusinessName(String businessName) { this.businessName = businessName; }
-
-    public Set<Claim> getClaims() { return claims; }
-    public void setClaims(Set<Claim> claims) { this.claims = claims; }
 }

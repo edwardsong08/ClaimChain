@@ -17,27 +17,34 @@ public class Claim {
     private String debtorEmail;
     private String debtorPhone;
 
-    private String clientName;       // ✅ newly added
-    private String clientContact;    // ✅ newly added
+    private String clientName;
+    private String clientContact;
+    private String clientAddress;
+    private String debtType;
+    private String contactHistory;
 
     private String serviceDescription;
     private BigDecimal amountOwed;
-    private LocalDate dateOfService;
 
-    private String documentUrl; // for future S3 link
+    private LocalDate dateOfService;
+    private LocalDate dateOfDefault;
+
+    private String documentUrl; // For public viewing (optional)
+    private String contractFileKey; // 🔑 S3 object key for backend
+
     private String status = "PENDING";
+    private Integer riskScore; // placeholder for next step
 
     private LocalDateTime submittedAt = LocalDateTime.now();
 
-    // 🔗 New field to link claim to a user
     @ManyToOne
-    @JoinColumn(name = "user_id") // foreign key column in claims table
+    @JoinColumn(name = "user_id")
     private User user;
 
-    // Constructors
     public Claim() {}
 
     // Getters and Setters
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -56,6 +63,15 @@ public class Claim {
     public String getClientContact() { return clientContact; }
     public void setClientContact(String clientContact) { this.clientContact = clientContact; }
 
+    public String getClientAddress() { return clientAddress; }
+    public void setClientAddress(String clientAddress) { this.clientAddress = clientAddress; }
+
+    public String getDebtType() { return debtType; }
+    public void setDebtType(String debtType) { this.debtType = debtType; }
+
+    public String getContactHistory() { return contactHistory; }
+    public void setContactHistory(String contactHistory) { this.contactHistory = contactHistory; }
+
     public String getServiceDescription() { return serviceDescription; }
     public void setServiceDescription(String serviceDescription) { this.serviceDescription = serviceDescription; }
 
@@ -65,11 +81,20 @@ public class Claim {
     public LocalDate getDateOfService() { return dateOfService; }
     public void setDateOfService(LocalDate dateOfService) { this.dateOfService = dateOfService; }
 
+    public LocalDate getDateOfDefault() { return dateOfDefault; }
+    public void setDateOfDefault(LocalDate dateOfDefault) { this.dateOfDefault = dateOfDefault; }
+
     public String getDocumentUrl() { return documentUrl; }
     public void setDocumentUrl(String documentUrl) { this.documentUrl = documentUrl; }
 
+    public String getContractFileKey() { return contractFileKey; }
+    public void setContractFileKey(String contractFileKey) { this.contractFileKey = contractFileKey; }
+
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public Integer getRiskScore() { return riskScore; }
+    public void setRiskScore(Integer riskScore) { this.riskScore = riskScore; }
 
     public LocalDateTime getSubmittedAt() { return submittedAt; }
     public void setSubmittedAt(LocalDateTime submittedAt) { this.submittedAt = submittedAt; }

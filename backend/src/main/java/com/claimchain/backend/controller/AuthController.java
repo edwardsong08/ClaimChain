@@ -1,8 +1,10 @@
 package com.claimchain.backend.controller;
 
+import com.claimchain.backend.dto.RegisterRequest;
 import com.claimchain.backend.model.Role;
 import com.claimchain.backend.service.AuthService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -15,14 +17,17 @@ public class AuthController {
     private AuthService authService;
 
     @PostMapping("/register")
-    public Map<String, String> register(@RequestBody Map<String, String> body) {
-        String name = body.get("name");
-        String email = body.get("email");
-        String password = body.get("password");
-        Role role = Role.valueOf(body.get("role"));
+    public ResponseEntity<Map<String, String>> register(@RequestBody RegisterRequest request) {
+        // Validate role
+        Role role;
+        try {
+            role = Role.valueOf(request.getRole().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid role: must be SERVICE_PROVIDER or COLLECTION_AGENCY"));
+        }
 
-        String token = authService.register(name, email, password, role);
-        return Map.of("token", token);
+        String token = authService.register(request, role);
+        return ResponseEntity.status(201).body(Map.of("token", token));
     }
 
     @PostMapping("/login")
