@@ -1,124 +1,85 @@
-## 🔍 ClaimChain – Platform Overview
+## 🔍 ClaimChain — Full-Stack Claims Exchange Platform
 
-**ClaimChain** is a full-stack, production-grade platform that enables service providers to submit unpaid work claims, which are then validated, scored, grouped, and offered for purchase to vetted collection agencies or debt buyers. The system features secure authentication, document parsing, automated risk scoring, and digital packaging to streamline claim recovery and monetization.
+**ClaimChain** is a full-stack, production-grade platform that enables service providers to submit unpaid work claims with supporting documentation, undergo verification and review, receive explainable risk scoring, and package claims into anonymized portfolios that vetted collection agencies or debt buyers can purchase through a secure marketplace.
 
-The platform aims to reduce friction and cost for small-to-mid-size service providers while giving buyers access to vetted, risk-profiled claim portfolios.
+ClaimChain is designed as an end-to-end workflow system: **identity + verification**, **claim intake**, **document ingestion (parsing/OCR)**, **risk scoring (rules + ML)**, **portfolio packaging**, **payments**, **auditability**, and **multi-client access (web + mobile)**.
+
+**Security & compliance posture:** ClaimChain is designed with **least-privilege access controls**, **PII-aware handling**, and **auditable event trails** across key actions (submissions, review decisions, purchases, and exports).
 
 ---
 
-## 🎯 Project Goals
+## ✅ Core Features
 
-- Build a **scalable, maintainable backend** using modern Java tooling (Spring Boot, JPA).
-- Provide a **simple, intuitive UI** for non-technical users to submit and track claims.
-- Create an **automated, anonymous portfolio marketplace** for vetted buyers to evaluate and purchase claims.
-- Focus on **backend quality, modular logic**, and infrastructure first.
-- Serve as a **startup prototype** with real-world legal/financial potential.
+### Identity & Security
+- Role-based accounts: **Service Providers**, **Collection Agencies / Buyers**, and **Admins**
+- Secure authentication (JWT-based sessions)
+- Account verification workflow (admin approval for platform access)
+- Password reset / account recovery flows
+- Fine-grained access control and protected endpoints
+
+### Service Provider Workflow
+- Submit claims with structured form validation
+- Upload supporting evidence (PDFs/images)
+- Track claim lifecycle status and review notes
+- View scoring outputs and decision explanations
+
+### Document Ingestion & Processing
+- Secure document storage (S3-compatible)
+- Automated document parsing (PDF/text extraction) with OCR support for scanned documents
+- Processing pipeline with job status tracking, retries, and failure handling
+- Document completeness and confidence signals for downstream scoring and review
+
+### Admin Review & Operations
+- Admin dashboard for user verification and platform governance
+- Claim review queue with approval/rejection flows and feedback notes
+- Claim lifecycle management with controlled state transitions
+- Auditable event history for key actions (submissions, review decisions, status changes)
+
+### Risk Scoring (Rules + ML)
+- Deterministic baseline scoring engine with explainability (reasons + weighted factors)
+- ML augmentation layer for improved prediction and portfolio ranking
+- Model versioning and safe fallback to rules-based scoring
+
+### Marketplace & Payments
+- Automated claim packaging into anonymized portfolios
+- Buyer marketplace with filtering and portfolio analytics
+- Secure checkout and purchase flow (Stripe)
+- Post-purchase export/download with access-controlled deliverables
+
+### Web + Mobile Clients
+- Web dashboards for each role (Provider / Buyer / Admin)
+- Mobile companion app for providers:
+  - claim submission
+  - camera capture + document uploads
+  - status tracking and notifications
+- Android distribution via APK; iOS distribution via TestFlight
 
 ---
 
 ## ⚙️ Tech Stack
 
-### 🔙 Backend (Java + Spring Boot)
+### Backend
+- Java 17, Spring Boot (Web, Security, Data JPA, Validation)
+- PostgreSQL (**Docker locally**, **AWS RDS in production**)
+- JWT Authentication + RBAC
+- Apache Tika (document parsing) + OCR support
+- AWS S3-compatible storage
+- Stripe payments integration
+- Background job processing for document ingestion and scoring
 
-- Spring Boot (Web, Security, Data JPA)
-- PostgreSQL (via Docker)
-- Apache Tika / Tesseract (file parsing & OCR)
-- AWS SDK (S3 storage)
-- Stripe SDK (buyer payments)
-- Lombok, DevTools
-- Docker (local setup)
-- GitHub Actions (CI/CD – planned)
-- Deployed to AWS (planned)
+### Frontend (Web)
+- TypeScript + Next.js
+- Role-based routing and dashboards
+- Form validation + file upload UX
+- Data tables, filtering, and analytics visualizations
 
-### 🌐 Frontend (React + Vite)
+### Mobile
+- Cross-platform mobile client (Android + iOS)
+- Secure token storage and mobile-friendly auth
+- Document capture/upload workflow
 
-- React Router DOM
-- Zustand or Context API
-- Axios for HTTP
-- File upload via Dropzone or input
-- Tailwind CSS (optional)
-- Charts via Chart.js or Recharts
-- Deployed via Vercel (planned)
-
----
-
-## 🧑‍💻 Local Development Setup
-
-> These steps assume you're using **Windows with WSL2**, but will also work with Linux or macOS with slight modifications.
-
-### 📦 Prerequisites
-
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- [Java 17+ JDK](https://adoptium.net/)
-- [Maven](https://maven.apache.org/) (or use `./mvnw`)
-- [DBeaver](https://dbeaver.io/) (optional, for DB GUI)
-- Git
-
----
-
-### ⚙️ Backend Setup
-
-1. **Clone the Repository**
-
-   ```bash
-   git clone https://github.com/your-org/claimchain.git
-   cd claimchain
-   ```
-
-2. **Start PostgreSQL via Docker Compose**
-
-   ```bash
-   docker-compose up -d
-   ```
-
-   This will spin up a PostgreSQL container with the following credentials:
-
-   - Username: `claimchain`
-   - Password: `claimchainpw`
-   - Database: `claimchaindb`
-   - Port: `5432`
-
-3. **Configure **``** (already set)**
-
-   ```properties
-   spring.datasource.url=jdbc:postgresql://localhost:5432/claimchaindb
-   spring.datasource.username=claimchain
-   spring.datasource.password=claimchainpw
-   spring.sql.init.mode=always
-   ```
-
-4. **Run the Backend**
-
-   ```bash
-   cd backend
-   ./mvnw clean install
-   ./mvnw spring-boot:run
-   ```
-
----
-
-### 🌐 Frontend Setup (Coming Soon)
-
-> The frontend is React (Vite-based). Once initialized, setup instructions will appear here.
-
----
-
-### 🕪 Optional: Access DB via GUI (DBeaver)
-
-- **Host:** `localhost`
-- **Port:** `5432`
-- **Database:** `claimchaindb`
-- **User:** `claimchain`
-- **Password:** `claimchainpw`
-
----
-
-## 📘️ Team Onboarding Notes
-
-- **Dev Branching Strategy:** Use feature branches (`feature/<name>`) off `main`. Submit pull requests for review.
-- **Code Style:** Use conventional commits and format code using IDE auto-format or `.editorconfig` where available.
-- **Environment Isolation:** Use Docker for all services. Do not install Postgres manually.
-- **Secrets & Keys:** Never commit `.env` files or API keys to version control. Use secure methods (e.g., GitHub Actions secrets, AWS Secrets Manager).
-- **VS Code Recommended Extensions:** Java Extension Pack, Spring Boot Tools, Docker, ESLint (for frontend), Prettier.
-- **First Contact:** Open a GitHub Issue or Slack thread if something seems broken or unclear during setup.
-
+### Infrastructure
+- Docker-based local development environment
+- CI/CD pipeline (GitHub Actions)
+- Cloud deployment architecture (AWS-ready: RDS + S3 + application hosting)
+- Observability hooks for structured logging, metrics, and job monitoring
