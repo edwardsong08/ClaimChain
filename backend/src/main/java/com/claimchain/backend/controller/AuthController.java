@@ -1,8 +1,10 @@
 package com.claimchain.backend.controller;
 
+import com.claimchain.backend.dto.LoginRequestDTO;
 import com.claimchain.backend.dto.RegisterRequest;
 import com.claimchain.backend.model.Role;
 import com.claimchain.backend.service.AuthService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -31,9 +33,9 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public Map<String, String> login(@RequestBody Map<String, String> body) {
-        String email = body.get("email");
-        String password = body.get("password");
+    public Map<String, String> login(@Valid @RequestBody LoginRequestDTO request) {
+        String email = request.getEmail();
+        String password = request.getPassword();
 
         String token = authService.login(email, password);
         return Map.of("token", token);
