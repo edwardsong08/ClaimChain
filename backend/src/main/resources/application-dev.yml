@@ -21,3 +21,9 @@ security:
     # Keep your existing hardcoded secret here as a safe local default:
     secret: ${JWT_SECRET:TcMkSc+I6oZYYFyoGEq3Vw0tbLa9Afz4nMApJILR7il6E6h+sxQLv7vYO4QUzU7DJ/1PNUwhX0q1P3/1gHLbjA==}
     expiration-millis: ${JWT_EXPIRATION_MILLIS:86400000}
+
+app:
+  cors:
+    # Strict default: empty list. To enable locally, set env:
+    # CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
