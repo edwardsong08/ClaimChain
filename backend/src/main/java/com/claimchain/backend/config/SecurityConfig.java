@@ -19,6 +19,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity(prePostEnabled = true) // ✅ Explicitly enable method-level security
 public class SecurityConfig {
 
+    private final RequestIdFilter requestIdFilter;
+
+    public SecurityConfig(RequestIdFilter requestIdFilter) {
+        this.requestIdFilter = requestIdFilter;
+    }
+
     @Autowired
     private JwtAuthFilter jwtAuthFilter;
 
@@ -37,6 +43,7 @@ public class SecurityConfig {
             .userDetailsService(userDetailsService);
 
         http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+        http.addFilterBefore(requestIdFilter, JwtAuthFilter.class);
 
         return http.build();
     }
