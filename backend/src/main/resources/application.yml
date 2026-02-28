@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: ClaimChain
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+security:
+  jwt:
+    # In prod, do NOT set a default. Must be provided via env JWT_SECRET
+    secret: ${JWT_SECRET}
+    expiration-millis: ${JWT_EXPIRATION_MILLIS:86400000}
