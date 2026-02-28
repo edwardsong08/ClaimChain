@@ -1,6 +1,8 @@
 package com.claimchain.backend.config;
 
 import com.claimchain.backend.security.JwtAuthFilter;
+import com.claimchain.backend.security.RestAccessDeniedHandler;
+import com.claimchain.backend.security.RestAuthenticationEntryPoint;
 import com.claimchain.backend.service.CustomUserDetailsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -20,9 +22,17 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final RequestIdFilter requestIdFilter;
+    private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
+    private final RestAccessDeniedHandler restAccessDeniedHandler;
 
-    public SecurityConfig(RequestIdFilter requestIdFilter) {
+    public SecurityConfig(
+            RequestIdFilter requestIdFilter,
+            RestAuthenticationEntryPoint restAuthenticationEntryPoint,
+            RestAccessDeniedHandler restAccessDeniedHandler
+    ) {
         this.requestIdFilter = requestIdFilter;
+        this.restAuthenticationEntryPoint = restAuthenticationEntryPoint;
+        this.restAccessDeniedHandler = restAccessDeniedHandler;
     }
 
     @Autowired
@@ -38,6 +48,10 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**").permitAll()
                 .anyRequest().authenticated() // 🔒 protect all other routes
+            )
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint(restAuthenticationEntryPoint)
+                .accessDeniedHandler(restAccessDeniedHandler)
             )
             .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .userDetailsService(userDetailsService);

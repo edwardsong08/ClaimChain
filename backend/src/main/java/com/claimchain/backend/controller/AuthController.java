@@ -26,7 +26,7 @@ public class AuthController {
         try {
             role = Role.valueOf(request.getRole().toUpperCase());
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid role: must be SERVICE_PROVIDER or COLLECTION_AGENCY"));
+            throw new IllegalArgumentException("Invalid role: must be SERVICE_PROVIDER or COLLECTION_AGENCY");
         }
 
         RegisterRequest registerRequest = new RegisterRequest();
