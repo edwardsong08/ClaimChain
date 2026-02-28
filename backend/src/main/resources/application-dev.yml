@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/claimchaindb}
+    username: ${DB_USERNAME:claimchain}
+    password: ${DB_PASSWORD:claimchainpw}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  sql:
+    init:
+      mode: always
+
+security:
+  jwt:
+    # DEV ONLY default. This must be 256-bit+ after BASE64 decoding.
+    # Keep your existing hardcoded secret here as a safe local default:
+    secret: ${JWT_SECRET:TcMkSc+I6oZYYFyoGEq3Vw0tbLa9Afz4nMApJILR7il6E6h+sxQLv7vYO4QUzU7DJ/1PNUwhX0q1P3/1gHLbjA==}
+    expiration-millis: ${JWT_EXPIRATION_MILLIS:86400000}
