@@ -1,6 +1,8 @@
 package com.claimchain.backend.controller;
 
 import com.claimchain.backend.dto.LoginRequestDTO;
+import com.claimchain.backend.dto.LogoutRequestDTO;
+import com.claimchain.backend.dto.RefreshRequestDTO;
 import com.claimchain.backend.dto.RegisterRequest;
 import com.claimchain.backend.dto.RegisterRequestDTO;
 import com.claimchain.backend.model.Role;
@@ -40,6 +42,7 @@ public class AuthController {
         registerRequest.setEinOrLicense(request.getEinOrLicense());
         registerRequest.setBusinessType(request.getBusinessType());
 
+        // Access token only (registration behavior unchanged for now)
         String token = authService.register(registerRequest, role);
         return ResponseEntity.status(201).body(Map.of("token", token));
     }
@@ -49,7 +52,18 @@ public class AuthController {
         String email = request.getEmail();
         String password = request.getPassword();
 
-        String token = authService.login(email, password);
-        return Map.of("token", token);
+        // Now returns access + refresh
+        return authService.login(email, password);
+    }
+
+    @PostMapping("/refresh")
+    public Map<String, String> refresh(@Valid @RequestBody RefreshRequestDTO request) {
+        return authService.refresh(request.getRefreshToken());
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody LogoutRequestDTO request) {
+        authService.logout(request.getRefreshToken());
+        return ResponseEntity.noContent().build();
     }
 }
