@@ -4,6 +4,7 @@ import com.claimchain.backend.dto.ClaimRequestDTO;
 import com.claimchain.backend.dto.ClaimResponseDTO;
 import com.claimchain.backend.model.Claim;
 import com.claimchain.backend.model.User;
+import com.claimchain.backend.model.VerificationStatus;
 import com.claimchain.backend.repository.ClaimRepository;
 import com.claimchain.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +27,7 @@ public class ClaimService {
         User user = userRepository.findByEmail(email);
         if (user == null) throw new RuntimeException("User not found with email: " + email);
 
-        if (!user.isVerified()) {
+        if (user.getVerificationStatus() != VerificationStatus.APPROVED) {
             throw new RuntimeException("User is not verified to submit claims.");
         }
 

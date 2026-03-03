@@ -8,8 +8,11 @@ server:
   port: ${SERVER_PORT:8080}
 
 security:
+  bootstrap:
+    admin-token: ${ADMIN_BOOTSTRAP_TOKEN:}
   jwt:
     # In prod, do NOT set a default. Must be provided via env JWT_SECRET
     secret: ${JWT_SECRET}
     expiration-millis: ${JWT_EXPIRATION_MILLIS:86400000}
     refresh-expiration-millis: ${JWT_REFRESH_EXPIRATION_MILLIS:2592000000}
+    password-reset-expiration-millis: ${JWT_PASSWORD_RESET_EXPIRATION_MILLIS:900000}

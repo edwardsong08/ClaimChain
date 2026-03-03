@@ -1,10 +1,12 @@
 package com.claimchain.backend.controller;
 
+import com.claimchain.backend.dto.ForgotPasswordRequestDTO;
 import com.claimchain.backend.dto.LoginRequestDTO;
 import com.claimchain.backend.dto.LogoutRequestDTO;
 import com.claimchain.backend.dto.RefreshRequestDTO;
 import com.claimchain.backend.dto.RegisterRequest;
 import com.claimchain.backend.dto.RegisterRequestDTO;
+import com.claimchain.backend.dto.ResetPasswordRequestDTO;
 import com.claimchain.backend.model.Role;
 import com.claimchain.backend.service.AuthService;
 import jakarta.validation.Valid;
@@ -59,6 +61,18 @@ public class AuthController {
     @PostMapping("/refresh")
     public Map<String, String> refresh(@Valid @RequestBody RefreshRequestDTO request) {
         return authService.refresh(request.getRefreshToken());
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequestDTO request) {
+        authService.forgotPassword(request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequestDTO request) {
+        authService.resetPassword(request);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/logout")
