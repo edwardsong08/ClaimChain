@@ -57,6 +57,17 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", ex.getMessage(), List.of(ex.getMessage()), request);
     }
 
+    @ExceptionHandler(AuthTokenException.class)
+    public ResponseEntity<ApiErrorResponse> handleAuthToken(AuthTokenException ex, HttpServletRequest request) {
+        return build(
+                HttpStatus.BAD_REQUEST,
+                ex.getCode(),
+                ex.getMessage(),
+                List.of(ex.getMessage()),
+                request
+        );
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleAccessDenied(
             AccessDeniedException ex,

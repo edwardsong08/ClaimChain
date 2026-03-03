@@ -23,6 +23,11 @@ public class JwtService {
         this.jwtProperties = jwtProperties;
     }
 
+    // Added for refresh-token lifecycle
+    public long getRefreshExpirationMillis() {
+        return jwtProperties.getRefreshExpirationMillis();
+    }
+
     private Key getSigningKey() {
         byte[] keyBytes = Decoders.BASE64.decode(jwtProperties.getSecret());
         return Keys.hmacShaKeyFor(keyBytes);

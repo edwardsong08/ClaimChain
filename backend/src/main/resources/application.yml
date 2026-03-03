@@ -12,3 +12,4 @@ security:
     # In prod, do NOT set a default. Must be provided via env JWT_SECRET
     secret: ${JWT_SECRET}
     expiration-millis: ${JWT_EXPIRATION_MILLIS:86400000}
+    refresh-expiration-millis: ${JWT_REFRESH_EXPIRATION_MILLIS:2592000000}

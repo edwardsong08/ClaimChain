@@ -15,6 +15,9 @@ public class JwtProperties {
     @Min(60_000) // minimum 1 minute
     private long expirationMillis;
 
+    @Min(60_000) // minimum 1 minute
+    private long refreshExpirationMillis;
+
     public String getSecret() {
         return secret;
     }
@@ -29,5 +32,13 @@ public class JwtProperties {
 
     public void setExpirationMillis(long expirationMillis) {
         this.expirationMillis = expirationMillis;
+    }
+
+    public long getRefreshExpirationMillis() {
+        return refreshExpirationMillis;
+    }
+
+    public void setRefreshExpirationMillis(long refreshExpirationMillis) {
+        this.refreshExpirationMillis = refreshExpirationMillis;
     }
 }
