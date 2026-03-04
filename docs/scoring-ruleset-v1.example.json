@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "eligibility": {
+    "requiredClaimStatus": "APPROVED",
+    "requiredDocTypes": ["INVOICE", "CONTRACT"],
+    "minExtractionSuccessRate": 0.6,
+    "blockActiveDisputes": true
+  },
+  "weights": {
+    "enforceability": 0.35,
+    "documentation": 0.30,
+    "collectability": 0.25,
+    "operationalRisk": 0.10
+  },
+  "gradeBands": [
+    { "grade": "A", "minScore": 85 },
+    { "grade": "B", "minScore": 70 },
+    { "grade": "C", "minScore": 55 },
+    { "grade": "D", "minScore": 40 },
+    { "grade": "F", "minScore": 0 }
+  ],
+  "caps": {
+    "enforceabilityMax": 35,
+    "documentationMax": 30,
+    "collectabilityMax": 25,
+    "operationalRiskMax": 10
+  },
+  "rules": [
+    {
+      "id": "JURISDICTION_KNOWN",
+      "group": "enforceability",
+      "when": { "jurisdictionKnown": true },
+      "points": 6,
+      "reason": "Jurisdiction provided"
+    },
+    {
+      "id": "JURISDICTION_MISSING",
+      "group": "enforceability",
+      "when": { "jurisdictionKnown": false },
+      "points": -8,
+      "reason": "Jurisdiction missing"
+    },
+    {
+      "id": "DEBT_AGE_0_90",
+      "group": "enforceability",
+      "when": { "debtAgeDaysLte": 90 },
+      "points": 10,
+      "reason": "Very recent debt"
+    },
+    {
+      "id": "DEBT_AGE_91_180",
+      "group": "enforceability",
+      "when": { "debtAgeDaysBetween": [91, 180] },
+      "points": 6,
+      "reason": "Recent debt"
+    },
+    {
+      "id": "DEBT_AGE_181_365",
+      "group": "enforceability",
+      "when": { "debtAgeDaysBetween": [181, 365] },
+      "points": 2,
+      "reason": "Moderately aged debt"
+    },
+    {
+      "id": "DEBT_AGE_366_730",
+      "group": "enforceability",
+      "when": { "debtAgeDaysBetween": [366, 730] },
+      "points": -6,
+      "reason": "Aged debt"
+    },
+    {
+      "id": "DEBT_AGE_GT_730",
+      "group": "enforceability",
+      "when": { "debtAgeDaysGte": 731 },
+      "points": -14,
+      "reason": "Old debt"
+    },
+    {
+      "id": "EXTRACTION_SUCCESS_HIGH",
+      "group": "documentation",
+      "when": { "extractionSuccessRateGte": 0.8 },
+      "points": 8,
+      "reason": "Most documents extracted successfully"
+    },
+    {
+      "id": "EXTRACTION_SUCCESS_MED",
+      "group": "documentation",
+      "when": { "extractionSuccessRateBetween": [0.5, 0.79] },
+      "points": 3,
+      "reason": "Some documents extracted successfully"
+    },
+    {
+      "id": "EXTRACTION_SUCCESS_LOW",
+      "group": "documentation",
+      "when": { "extractionSuccessRateLt": 0.5 },
+      "points": -6,
+      "reason": "Low extraction success rate"
+    },
+    {
+      "id": "DEBTOR_TYPE_BUSINESS",
+      "group": "collectability",
+      "when": { "debtorTypeEquals": "BUSINESS" },
+      "points": 6,
+      "reason": "Business debtor"
+    },
+    {
+      "id": "DEBTOR_TYPE_CONSUMER",
+      "group": "collectability",
+      "when": { "debtorTypeEquals": "CONSUMER" },
+      "points": 2,
+      "reason": "Consumer debtor"
+    },
+    {
+      "id": "AMOUNT_BUCKET_1000_4999",
+      "group": "collectability",
+      "when": { "currentAmountBetween": [1000, 4999] },
+      "points": 6,
+      "reason": "Mid-range balance"
+    },
+    {
+      "id": "DISPUTE_POSSIBLE",
+      "group": "operationalRisk",
+      "when": { "disputeStatusEquals": "POSSIBLE" },
+      "points": -5,
+      "reason": "Possible dispute increases effort"
+    },
+    {
+      "id": "DOC_COUNT_TOO_HIGH",
+      "group": "operationalRisk",
+      "when": { "docCountGte": 26 },
+      "points": -2,
+      "reason": "High document count increases review effort"
+    }
+  ]
+}
