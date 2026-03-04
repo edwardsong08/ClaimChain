@@ -37,6 +37,17 @@ public class ClaimController {
         return ResponseEntity.status(HttpStatus.CREATED).body(responseDTO);
     }
 
+    @PreAuthorize("hasRole('SERVICE_PROVIDER')")
+    @PutMapping("/{id}")
+    public ResponseEntity<ClaimResponseDTO> updateClaim(
+            @PathVariable Long id,
+            @Valid @RequestBody ClaimRequestDTO requestDTO,
+            Principal principal
+    ) {
+        ClaimResponseDTO responseDTO = claimService.updateClaim(id, requestDTO, principal.getName());
+        return ResponseEntity.ok(responseDTO);
+    }
+
     @GetMapping
     public ResponseEntity<List<ClaimResponseDTO>> getUserClaims(Principal principal) {
         List<ClaimResponseDTO> claims = claimService.getClaimsForUser(principal.getName());
@@ -103,5 +114,23 @@ public class ClaimController {
         );
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(ClaimService.ClaimFrozenException.class)
+    public ResponseEntity<ApiErrorResponse> handleClaimFrozen(
+            ClaimService.ClaimFrozenException ex,
+            HttpServletRequest request
+    ) {
+        String requestId = (String) request.getAttribute(RequestIdFilter.ATTRIBUTE_NAME);
+
+        ApiErrorResponse body = new ApiErrorResponse(
+                "CLAIM_FROZEN",
+                ex.getMessage(),
+                List.of(ex.getMessage()),
+                Instant.now(),
+                requestId
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 }

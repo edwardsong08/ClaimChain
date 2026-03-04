@@ -2,6 +2,7 @@ package com.claimchain.backend.service;
 
 import com.claimchain.backend.dto.AdminClaimDecisionRequestDTO;
 import com.claimchain.backend.dto.ClaimDocumentResponseDTO;
+import com.claimchain.backend.dto.ClaimFreezeOverrideRequestDTO;
 import com.claimchain.backend.dto.ClaimRequestDTO;
 import com.claimchain.backend.dto.ClaimResponseDTO;
 import com.claimchain.backend.dto.DocumentUploadResponseDTO;
@@ -130,6 +131,47 @@ public class ClaimService {
                 .stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
+    }
+
+    public ClaimResponseDTO updateClaim(Long claimId, ClaimRequestDTO dto, String requesterEmail) {
+        User requester = authorizationService.requireUser(requesterEmail);
+        Claim claim = claimRepository.findById(claimId)
+                .orElseThrow(ClaimNotFoundException::new);
+        authorizationService.requireClaimAccess(claim, requester);
+        enforceClaimNotFrozenForScoringChanges(claim);
+
+        claim.setClientName(dto.getClientName());
+        claim.setClientContact(dto.getClientContact());
+        claim.setClientAddress(dto.getClientAddress());
+        claim.setDebtType(dto.getDebtType());
+        claim.setContactHistory(dto.getContactHistory());
+        claim.setAmountOwed(dto.getAmount());
+        claim.setDateOfDefault(dto.getDateOfDefault());
+        claim.setContractFileKey(dto.getContractFileKey());
+
+        Claim saved = claimRepository.save(claim);
+        return mapToDTO(saved);
+    }
+
+    public void requestFreezeOverride(Long claimId, ClaimFreezeOverrideRequestDTO request, String adminEmail) {
+        User admin = requireAdminUser(adminEmail);
+        Claim claim = claimRepository.findById(claimId)
+                .orElseThrow(() -> new IllegalArgumentException("Claim not found."));
+
+        String reason = normalizeFreezeOverrideReason(request == null ? null : request.getReason());
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("reason", reason);
+        metadata.put("status", claim.getStatus() == null ? null : claim.getStatus().name());
+
+        auditService.record(
+                admin.getId(),
+                admin.getRole() == null ? null : admin.getRole().name(),
+                "CLAIM_FREEZE_OVERRIDE_REQUESTED",
+                "CLAIM",
+                claim.getId(),
+                toJson(metadata)
+        );
     }
 
     public ClaimResponseDTO startReview(Long claimId, String adminEmail) {
@@ -368,6 +410,8 @@ public class ClaimService {
         dto.setSizeBytes(document.getSizeBytes());
         dto.setStatus(document.getStatus().name());
         dto.setDocumentType(document.getDocumentType() == null ? null : document.getDocumentType().name());
+        dto.setExtractionStatus(document.getExtractionStatus() == null ? null : document.getExtractionStatus().name());
+        dto.setExtractedCharCount(document.getExtractedCharCount());
         dto.setCreatedAt(document.getCreatedAt());
         return dto;
     }
@@ -391,6 +435,13 @@ public class ClaimService {
             case LISTED -> to == ClaimStatus.SOLD;
             case REJECTED, SOLD -> false;
         };
+    }
+
+    private void enforceClaimNotFrozenForScoringChanges(Claim claim) {
+        ClaimStatus status = claim.getStatus();
+        if (status == ClaimStatus.PACKAGED || status == ClaimStatus.LISTED || status == ClaimStatus.SOLD) {
+            throw new ClaimFrozenException("Claim is frozen and cannot be modified in its current status.");
+        }
     }
 
     private ClaimStatus parseClaimStatus(String value) {
@@ -428,6 +479,17 @@ public class ClaimService {
 
     private String normalizeDecision(String decisionValue) {
         return decisionValue == null ? "" : decisionValue.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String normalizeFreezeOverrideReason(String reason) {
+        if (reason == null) {
+            throw new IllegalArgumentException("reason is required.");
+        }
+        String trimmed = reason.trim();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException("reason is required.");
+        }
+        return trimmed;
     }
 
     private String normalizeReviewNotes(String notes) {
@@ -539,6 +601,12 @@ public class ClaimService {
 
         public String getCode() {
             return code;
+        }
+    }
+
+    public static class ClaimFrozenException extends RuntimeException {
+        public ClaimFrozenException(String message) {
+            super(message);
         }
     }
 

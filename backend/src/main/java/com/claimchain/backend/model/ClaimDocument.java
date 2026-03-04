@@ -43,6 +43,19 @@ public class ClaimDocument {
     @Column(name = "document_type", nullable = false, length = 50)
     private DocumentType documentType = DocumentType.OTHER;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "extraction_status", nullable = false, length = 50)
+    private ExtractionStatus extractionStatus = ExtractionStatus.NOT_STARTED;
+
+    @Column(name = "extracted_char_count")
+    private Integer extractedCharCount;
+
+    @Column(name = "extraction_error_code", length = 80)
+    private String extractionErrorCode;
+
+    @Column(name = "extraction_error_message", length = 255)
+    private String extractionErrorMessage;
+
     @Column(name = "extracted_storage_key", length = 512)
     private String extractedStorageKey;
 
@@ -148,6 +161,38 @@ public class ClaimDocument {
 
     public void setDocumentType(DocumentType documentType) {
         this.documentType = documentType;
+    }
+
+    public ExtractionStatus getExtractionStatus() {
+        return extractionStatus;
+    }
+
+    public void setExtractionStatus(ExtractionStatus extractionStatus) {
+        this.extractionStatus = extractionStatus;
+    }
+
+    public Integer getExtractedCharCount() {
+        return extractedCharCount;
+    }
+
+    public void setExtractedCharCount(Integer extractedCharCount) {
+        this.extractedCharCount = extractedCharCount;
+    }
+
+    public String getExtractionErrorCode() {
+        return extractionErrorCode;
+    }
+
+    public void setExtractionErrorCode(String extractionErrorCode) {
+        this.extractionErrorCode = extractionErrorCode;
+    }
+
+    public String getExtractionErrorMessage() {
+        return extractionErrorMessage;
+    }
+
+    public void setExtractionErrorMessage(String extractionErrorMessage) {
+        this.extractionErrorMessage = extractionErrorMessage;
     }
 
     public String getExtractedStorageKey() {

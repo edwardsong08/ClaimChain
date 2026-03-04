@@ -2,6 +2,7 @@ package com.claimchain.backend.exception;
 
 import com.claimchain.backend.config.RequestIdFilter;
 import com.claimchain.backend.dto.ApiErrorResponse;
+import com.claimchain.backend.ruleset.RulesetValidationException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
@@ -50,6 +51,17 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         return build(HttpStatus.BAD_REQUEST, "MALFORMED_JSON", "Malformed JSON request", List.of("Request body is unreadable"), request);
+    }
+
+    @ExceptionHandler(RulesetValidationException.class)
+    public ResponseEntity<ApiErrorResponse> handleRulesetValidation(
+            RulesetValidationException ex,
+            HttpServletRequest request
+    ) {
+        List<String> details = ex.getErrors() == null || ex.getErrors().isEmpty()
+                ? List.of("Ruleset config is invalid.")
+                : ex.getErrors();
+        return build(HttpStatus.BAD_REQUEST, "RULESET_INVALID", "Ruleset config is invalid.", details, request);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
