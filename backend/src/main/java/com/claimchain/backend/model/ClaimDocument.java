@@ -39,6 +39,12 @@ public class ClaimDocument {
     @Column(name = "status", nullable = false, length = 32)
     private DocumentStatus status;
 
+    @Column(name = "extracted_storage_key", length = 512)
+    private String extractedStorageKey;
+
+    @Column(name = "extracted_at")
+    private Instant extractedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -130,6 +136,22 @@ public class ClaimDocument {
 
     public void setStatus(DocumentStatus status) {
         this.status = status;
+    }
+
+    public String getExtractedStorageKey() {
+        return extractedStorageKey;
+    }
+
+    public void setExtractedStorageKey(String extractedStorageKey) {
+        this.extractedStorageKey = extractedStorageKey;
+    }
+
+    public Instant getExtractedAt() {
+        return extractedAt;
+    }
+
+    public void setExtractedAt(Instant extractedAt) {
+        this.extractedAt = extractedAt;
     }
 
     public Instant getCreatedAt() {
