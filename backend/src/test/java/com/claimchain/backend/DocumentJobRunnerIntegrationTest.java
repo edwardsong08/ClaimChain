@@ -3,6 +3,8 @@ package com.claimchain.backend;
 import com.claimchain.backend.dto.ApiErrorResponse;
 import com.claimchain.backend.model.Claim;
 import com.claimchain.backend.model.ClaimDocument;
+import com.claimchain.backend.model.ClaimScore;
+import com.claimchain.backend.model.ClaimStatus;
 import com.claimchain.backend.model.DocumentJob;
 import com.claimchain.backend.model.DocumentStatus;
 import com.claimchain.backend.model.DocumentType;
@@ -10,11 +12,16 @@ import com.claimchain.backend.model.ExtractionStatus;
 import com.claimchain.backend.model.JobStatus;
 import com.claimchain.backend.model.JobType;
 import com.claimchain.backend.model.Role;
+import com.claimchain.backend.model.Ruleset;
+import com.claimchain.backend.model.RulesetStatus;
+import com.claimchain.backend.model.RulesetType;
 import com.claimchain.backend.model.User;
 import com.claimchain.backend.model.VerificationStatus;
 import com.claimchain.backend.repository.ClaimDocumentRepository;
 import com.claimchain.backend.repository.ClaimRepository;
+import com.claimchain.backend.repository.ClaimScoreRepository;
 import com.claimchain.backend.repository.DocumentJobRepository;
+import com.claimchain.backend.repository.RulesetRepository;
 import com.claimchain.backend.repository.UserRepository;
 import com.claimchain.backend.storage.StorageService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -66,6 +73,37 @@ class DocumentJobRunnerIntegrationTest {
     private static final String PROVIDER_EMAIL = "provider@document-job-runner-test.local";
     private static final String TEST_EMAIL_PATTERN = "%@document-job-runner-test.local";
     private static final Path STORAGE_BASE_DIR = Path.of("storage/test-document-job-runner");
+    private static final String DOC_READY_SCORING_CONFIG = """
+            {
+              "eligibility": {
+                "requiredClaimStatus": "APPROVED",
+                "requiredDocTypes": ["INVOICE"],
+                "minExtractionSuccessRate": 1.0,
+                "blockActiveDisputes": false
+              },
+              "weights": {
+                "enforceability": 0.25,
+                "documentation": 0.25,
+                "collectability": 0.25,
+                "operationalRisk": 0.25
+              },
+              "gradeBands": [
+                {"grade":"A","minScore":80},
+                {"grade":"B","minScore":60},
+                {"grade":"C","minScore":40},
+                {"grade":"F","minScore":0}
+              ],
+              "caps": {
+                "enforceabilityMax": 25,
+                "documentationMax": 25,
+                "collectabilityMax": 25,
+                "operationalRiskMax": 25
+              },
+              "rules": [
+                {"id":"DOC_COUNT_BASE","group":"documentation","when":{"docCountGte":1},"points":12,"reason":"At least one document"}
+              ]
+            }
+            """;
 
     @Autowired
     private MockMvc mockMvc;
@@ -87,6 +125,12 @@ class DocumentJobRunnerIntegrationTest {
 
     @Autowired
     private DocumentJobRepository documentJobRepository;
+
+    @Autowired
+    private ClaimScoreRepository claimScoreRepository;
+
+    @Autowired
+    private RulesetRepository rulesetRepository;
 
     @Autowired
     private StorageService storageService;
@@ -272,6 +316,51 @@ class DocumentJobRunnerIntegrationTest {
         assertThat(updatedDocument.getExtractionErrorMessage()).isNotBlank();
     }
 
+    @Test
+    void extractionCompletion_triggersScoringForAlreadyApprovedClaim_whenDocsBecomeReady() throws Exception {
+        createActiveScoringRuleset(DOC_READY_SCORING_CONFIG);
+
+        startReviewAndApprove(claimId);
+        assertThat(claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId)).isEmpty();
+
+        mockMvc.perform(
+                        post("/api/admin/jobs/run-document-jobs")
+                                .param("limit", "1")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.processed").value(1));
+
+        List<ClaimScore> scores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        assertThat(scores).hasSize(1);
+        ClaimScore score = scores.get(0);
+        assertThat(score.isEligible()).isTrue();
+        assertThat(score.getScoreTotal()).isGreaterThan(0);
+        JsonNode explainability = objectMapper.readTree(score.getExplainabilityJson());
+        assertThat(explainability.path("trigger").asText()).isEqualTo("DOC_READY");
+    }
+
+    @Test
+    void extractionCompletion_doesNotTriggerScoringForFrozenClaimStatus() throws Exception {
+        createActiveScoringRuleset(DOC_READY_SCORING_CONFIG);
+
+        Claim claim = claimRepository.findById(claimId).orElseThrow();
+        claim.setStatus(ClaimStatus.PACKAGED);
+        claimRepository.saveAndFlush(claim);
+
+        mockMvc.perform(
+                        post("/api/admin/jobs/run-document-jobs")
+                                .param("limit", "1")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.processed").value(1));
+
+        assertThat(claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId)).isEmpty();
+    }
+
     private Long uploadTextDocument(Long claimId, String textContent) throws Exception {
         MockMultipartFile file = new MockMultipartFile(
                 "file",
@@ -292,6 +381,32 @@ class DocumentJobRunnerIntegrationTest {
 
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
         return body.get("docId").asLong();
+    }
+
+    private void startReviewAndApprove(Long claimId) throws Exception {
+        mockMvc.perform(
+                        post("/api/admin/claims/{claimId}/start-review", claimId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk());
+
+        mockMvc.perform(
+                        post("/api/admin/claims/{claimId}/decision", claimId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"decision\":\"APPROVE\",\"notes\":\"Auto-score after docs ready\"}")
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+    }
+
+    private Ruleset createActiveScoringRuleset(String configJson) {
+        Ruleset ruleset = new Ruleset();
+        ruleset.setType(RulesetType.SCORING);
+        ruleset.setStatus(RulesetStatus.ACTIVE);
+        ruleset.setVersion(1);
+        ruleset.setConfigJson(configJson);
+        return rulesetRepository.saveAndFlush(ruleset);
     }
 
     private User createUser(String name, String email, Role role, VerificationStatus verificationStatus) {
@@ -352,8 +467,11 @@ class DocumentJobRunnerIntegrationTest {
     }
 
     private void cleanupTestData() {
+        jdbcTemplate.update("DELETE FROM claim_scores");
         jdbcTemplate.update("DELETE FROM document_jobs");
         jdbcTemplate.update("DELETE FROM claim_documents");
+        jdbcTemplate.update("DELETE FROM rulesets");
+        jdbcTemplate.update("DELETE FROM audit_events");
 
         jdbcTemplate.update(
                 "UPDATE admin_bootstrap_state SET used_by_user_id = NULL WHERE used_by_user_id IN (SELECT id FROM users WHERE email LIKE ?)",

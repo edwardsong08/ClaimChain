@@ -12,6 +12,7 @@ import com.claimchain.backend.model.RulesetStatus;
 import com.claimchain.backend.model.RulesetType;
 import com.claimchain.backend.repository.ClaimDocumentRepository;
 import com.claimchain.backend.repository.ClaimRepository;
+import com.claimchain.backend.repository.ClaimScoreRepository;
 import com.claimchain.backend.repository.RulesetRepository;
 import com.claimchain.backend.service.ClaimScoringPersistenceService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -51,6 +52,9 @@ class ScoringEngineUnitTest {
     private RulesetRepository rulesetRepository;
 
     @Mock
+    private ClaimScoreRepository claimScoreRepository;
+
+    @Mock
     private ClaimScoringPersistenceService claimScoringPersistenceService;
 
     private ObjectMapper objectMapper;
@@ -62,6 +66,7 @@ class ScoringEngineUnitTest {
         scoringEngine = new ScoringEngine(
                 claimRepository,
                 claimDocumentRepository,
+                claimScoreRepository,
                 rulesetRepository,
                 claimScoringPersistenceService,
                 objectMapper
@@ -96,7 +101,8 @@ class ScoringEngineUnitTest {
                 any(),
                 anyString(),
                 anyString(),
-                eq(7L)
+                eq(7L),
+                eq(ScoringTrigger.APPROVAL)
         )).thenAnswer(invocation -> null);
 
         scoringEngine.scoreClaim(claimId, 7L, false);
@@ -121,7 +127,8 @@ class ScoringEngineUnitTest {
                 any(),
                 explainabilityCaptor.capture(),
                 featureSnapshotCaptor.capture(),
-                eq(7L)
+                eq(7L),
+                eq(ScoringTrigger.APPROVAL)
         );
 
         assertThat(eligibleCaptor.getAllValues().get(0)).isEqualTo(eligibleCaptor.getAllValues().get(1));
@@ -159,7 +166,8 @@ class ScoringEngineUnitTest {
                 any(),
                 anyString(),
                 anyString(),
-                eq(99L)
+                eq(99L),
+                eq(ScoringTrigger.APPROVAL)
         )).thenAnswer(invocation -> null);
 
         scoringEngine.scoreClaim(claimId, 99L, false);
@@ -179,7 +187,8 @@ class ScoringEngineUnitTest {
                 any(),
                 anyString(),
                 anyString(),
-                eq(99L)
+                eq(99L),
+                eq(ScoringTrigger.APPROVAL)
         );
 
         assertThat(scoreCaptor.getValue()).isEqualTo(72);
@@ -213,7 +222,8 @@ class ScoringEngineUnitTest {
                 any(),
                 anyString(),
                 anyString(),
-                eq(55L)
+                eq(55L),
+                eq(ScoringTrigger.APPROVAL)
         )).thenAnswer(invocation -> null);
 
         scoringEngine.scoreClaim(claimId, 55L, false);
@@ -235,7 +245,8 @@ class ScoringEngineUnitTest {
                 eq(0),
                 explainabilityCaptor.capture(),
                 anyString(),
-                eq(55L)
+                eq(55L),
+                eq(ScoringTrigger.APPROVAL)
         );
 
         assertThat(eligibleCaptor.getValue()).isFalse();
