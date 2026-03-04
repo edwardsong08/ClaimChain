@@ -45,6 +45,9 @@ public class DocumentJob {
     @Column(name = "finished_at")
     private Instant finishedAt;
 
+    @Column(name = "next_run_at")
+    private Instant nextRunAt;
+
     public DocumentJob() {
     }
 
@@ -152,5 +155,13 @@ public class DocumentJob {
 
     public void setFinishedAt(Instant finishedAt) {
         this.finishedAt = finishedAt;
+    }
+
+    public Instant getNextRunAt() {
+        return nextRunAt;
+    }
+
+    public void setNextRunAt(Instant nextRunAt) {
+        this.nextRunAt = nextRunAt;
     }
 }

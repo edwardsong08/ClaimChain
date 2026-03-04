@@ -9,7 +9,6 @@ import com.claimchain.backend.repository.ClaimDocumentRepository;
 import com.claimchain.backend.repository.DocumentJobRepository;
 import com.claimchain.backend.storage.StorageService;
 import org.apache.tika.Tika;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -32,6 +31,7 @@ public class DocumentJobRunnerService {
     private final DocumentJobRepository documentJobRepository;
     private final ClaimDocumentRepository claimDocumentRepository;
     private final StorageService storageService;
+    private final MalwareScanService malwareScanService;
     private final TransactionTemplate requiresNewTransaction;
     private final Tika tika;
 
@@ -39,11 +39,13 @@ public class DocumentJobRunnerService {
             DocumentJobRepository documentJobRepository,
             ClaimDocumentRepository claimDocumentRepository,
             StorageService storageService,
+            MalwareScanService malwareScanService,
             PlatformTransactionManager transactionManager
     ) {
         this.documentJobRepository = documentJobRepository;
         this.claimDocumentRepository = claimDocumentRepository;
         this.storageService = storageService;
+        this.malwareScanService = malwareScanService;
         this.tika = new Tika();
 
         this.requiresNewTransaction = new TransactionTemplate(transactionManager);
@@ -51,44 +53,56 @@ public class DocumentJobRunnerService {
     }
 
     public int runQueuedTikaJobs(int limit) {
-        int normalizedLimit = normalizeLimit(limit);
-
-        List<Long> jobIds = documentJobRepository
-                .findByStatusAndJobTypeOrderByCreatedAtAsc(
-                        JobStatus.QUEUED,
-                        JobType.TIKA_EXTRACT,
-                        PageRequest.of(0, normalizedLimit)
-                )
-                .stream()
-                .map(DocumentJob::getId)
-                .toList();
-
-        for (Long jobId : jobIds) {
-            requiresNewTransaction.executeWithoutResult(status -> processSingleJob(jobId));
-        }
-
-        return jobIds.size();
+        return runQueuedJobsByType(JobType.TIKA_EXTRACT, limit);
     }
 
-    private void processSingleJob(Long jobId) {
-        DocumentJob job = documentJobRepository.findById(jobId).orElse(null);
-        if (job == null) {
-            return;
+    public int runQueuedMalwareScanJobs(int limit) {
+        return runQueuedJobsByType(JobType.MALWARE_SCAN, limit);
+    }
+
+    private int runQueuedJobsByType(JobType jobType, int limit) {
+        int normalizedLimit = normalizeLimit(limit);
+        int processed = 0;
+
+        for (int i = 0; i < normalizedLimit; i++) {
+            Boolean claimedAndProcessed = requiresNewTransaction.execute(status -> claimAndProcessSingleJob(jobType));
+            if (!Boolean.TRUE.equals(claimedAndProcessed)) {
+                break;
+            }
+            processed++;
         }
-        if (job.getStatus() != JobStatus.QUEUED || job.getJobType() != JobType.TIKA_EXTRACT) {
-            return;
+
+        return processed;
+    }
+
+    private boolean claimAndProcessSingleJob(JobType jobType) {
+        List<DocumentJob> claimedJobs = documentJobRepository.claimQueuedJobsForType(jobType, 1);
+        if (claimedJobs.isEmpty()) {
+            return false;
         }
+
+        DocumentJob job = claimedJobs.get(0);
 
         ClaimDocument document = job.getDocument();
         Instant startedAt = Instant.now();
-
         job.setStatus(JobStatus.RUNNING);
         job.setStartedAt(startedAt);
         job.setFinishedAt(null);
+        job.setNextRunAt(null);
+        documentJobRepository.save(job);
 
+        if (jobType == JobType.TIKA_EXTRACT) {
+            processTikaExtractionJob(job, document);
+            return true;
+        }
+
+        processMalwareScanJob(job, document);
+        return true;
+    }
+
+    private void processTikaExtractionJob(DocumentJob job, ClaimDocument document) {
         document.setStatus(DocumentStatus.PROCESSING);
         claimDocumentRepository.save(document);
-        documentJobRepository.save(job);
 
         try (InputStream inputStream = storageService.load(document.getStorageKey())) {
             String extractedText = tika.parseToString(inputStream);
@@ -106,6 +120,27 @@ public class DocumentJobRunnerService {
             job.setStatus(JobStatus.DONE);
             job.setLastError(null);
             job.setFinishedAt(completedAt);
+            job.setNextRunAt(null);
+            documentJobRepository.save(job);
+        } catch (Exception ex) {
+            handleFailure(job, document, ex);
+        }
+    }
+
+    private void processMalwareScanJob(DocumentJob job, ClaimDocument document) {
+        try (InputStream inputStream = storageService.load(document.getStorageKey())) {
+            byte[] bytes = inputStream.readAllBytes();
+            MalwareScanResult result = malwareScanService.scan(bytes, document.getSniffedContentType());
+
+            if (result != MalwareScanResult.CLEAN) {
+                throw new RuntimeException("Malware scan did not return CLEAN.");
+            }
+
+            Instant completedAt = Instant.now();
+            job.setStatus(JobStatus.DONE);
+            job.setLastError(null);
+            job.setFinishedAt(completedAt);
+            job.setNextRunAt(null);
             documentJobRepository.save(job);
         } catch (Exception ex) {
             handleFailure(job, document, ex);
@@ -120,15 +155,19 @@ public class DocumentJobRunnerService {
 
         job.setAttemptCount(nextAttemptCount);
         job.setLastError(truncateError(ex));
-        job.setFinishedAt(failedAt);
 
         if (nextAttemptCount >= maxAttempts) {
             job.setStatus(JobStatus.FAILED);
+            job.setFinishedAt(failedAt);
+            job.setNextRunAt(null);
+            document.setStatus(DocumentStatus.FAILED);
         } else {
             job.setStatus(JobStatus.QUEUED);
+            job.setFinishedAt(null);
+            job.setNextRunAt(failedAt.plusSeconds(computeBackoffSeconds(nextAttemptCount)));
+            document.setStatus(DocumentStatus.QUEUED);
         }
 
-        document.setStatus(DocumentStatus.FAILED);
         claimDocumentRepository.save(document);
         documentJobRepository.save(job);
     }
@@ -149,5 +188,16 @@ public class DocumentJobRunnerService {
             return DEFAULT_LIMIT;
         }
         return Math.min(limit, MAX_LIMIT);
+    }
+
+    private long computeBackoffSeconds(int attemptCount) {
+        long delay = 30L;
+        for (int i = 1; i < attemptCount; i++) {
+            delay = Math.min(600L, delay * 2L);
+            if (delay == 600L) {
+                break;
+            }
+        }
+        return delay;
     }
 }
