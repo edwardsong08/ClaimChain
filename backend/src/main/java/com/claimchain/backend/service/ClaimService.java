@@ -7,7 +7,9 @@ import com.claimchain.backend.model.User;
 import com.claimchain.backend.model.VerificationStatus;
 import com.claimchain.backend.repository.ClaimRepository;
 import com.claimchain.backend.repository.UserRepository;
+import com.claimchain.backend.security.AuthorizationService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -23,12 +25,15 @@ public class ClaimService {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private AuthorizationService authorizationService;
+
     public ClaimResponseDTO createClaim(ClaimRequestDTO dto, String email) {
         User user = userRepository.findByEmail(email);
         if (user == null) throw new RuntimeException("User not found with email: " + email);
 
         if (user.getVerificationStatus() != VerificationStatus.APPROVED) {
-            throw new RuntimeException("User is not verified to submit claims.");
+            throw new AccessDeniedException("User is not verified to submit claims.");
         }
 
         Claim claim = new Claim();
@@ -55,6 +60,15 @@ public class ClaimService {
         return claims.stream().map(this::mapToDTO).collect(Collectors.toList());
     }
 
+    public ClaimResponseDTO getClaimById(Long claimId, String requesterEmail) {
+        User requester = authorizationService.requireUser(requesterEmail);
+        Claim claim = claimRepository.findById(claimId)
+                .orElseThrow(ClaimNotFoundException::new);
+
+        authorizationService.requireClaimAccess(claim, requester);
+        return mapToDTO(claim);
+    }
+
     private ClaimResponseDTO mapToDTO(Claim claim) {
         ClaimResponseDTO dto = new ClaimResponseDTO();
 
@@ -72,5 +86,8 @@ public class ClaimService {
         dto.setSubmittedBy(claim.getUser().getName());
 
         return dto;
+    }
+
+    public static class ClaimNotFoundException extends RuntimeException {
     }
 }

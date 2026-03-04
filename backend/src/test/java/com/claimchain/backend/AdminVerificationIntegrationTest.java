@@ -135,9 +135,9 @@ class AdminVerificationIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(claimPayload)
                 )
-                .andExpect(status().isInternalServerError())
+                .andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
                 .andExpect(jsonPath("$.requestId").isNotEmpty());
 
         mockMvc.perform(
