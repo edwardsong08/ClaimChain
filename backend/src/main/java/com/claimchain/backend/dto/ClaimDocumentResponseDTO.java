@@ -1,0 +1,73 @@
+package com.claimchain.backend.dto;
+
+import java.time.Instant;
+
+public class ClaimDocumentResponseDTO {
+
+    private Long id;
+    private String filename;
+    private String contentType;
+    private String sniffedContentType;
+    private Long sizeBytes;
+    private String status;
+    private Instant createdAt;
+
+    public ClaimDocumentResponseDTO() {
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getFilename() {
+        return filename;
+    }
+
+    public void setFilename(String filename) {
+        this.filename = filename;
+    }
+
+    public String getContentType() {
+        return contentType;
+    }
+
+    public void setContentType(String contentType) {
+        this.contentType = contentType;
+    }
+
+    public String getSniffedContentType() {
+        return sniffedContentType;
+    }
+
+    public void setSniffedContentType(String sniffedContentType) {
+        this.sniffedContentType = sniffedContentType;
+    }
+
+    public Long getSizeBytes() {
+        return sizeBytes;
+    }
+
+    public void setSizeBytes(Long sizeBytes) {
+        this.sizeBytes = sizeBytes;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
+    }
+}
