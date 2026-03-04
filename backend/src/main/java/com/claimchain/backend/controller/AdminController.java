@@ -1,7 +1,9 @@
 package com.claimchain.backend.controller;
 
+import com.claimchain.backend.config.RequestIdFilter;
 import com.claimchain.backend.dto.AdminClaimDecisionRequestDTO;
 import com.claimchain.backend.dto.AdminBootstrapRequestDTO;
+import com.claimchain.backend.dto.ApiErrorResponse;
 import com.claimchain.backend.dto.ClaimFreezeOverrideRequestDTO;
 import com.claimchain.backend.dto.ClaimScoreResponseDTO;
 import com.claimchain.backend.dto.ClaimResponseDTO;
@@ -11,12 +13,15 @@ import com.claimchain.backend.service.AdminService;
 import com.claimchain.backend.service.AuthService;
 import com.claimchain.backend.service.ClaimService;
 import com.claimchain.backend.service.ClaimScoringPersistenceService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -120,5 +125,31 @@ public class AdminController {
             Principal principal
     ) {
         return ResponseEntity.ok(claimScoringPersistenceService.listScoreRunsForClaim(claimId, principal.getName()));
+    }
+
+    @PostMapping("/claims/{claimId}/rescore")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> rescoreClaim(
+            @PathVariable Long claimId,
+            Principal principal
+    ) {
+        claimService.rescoreClaim(claimId, principal.getName());
+        return ResponseEntity.noContent().build();
+    }
+
+    @ExceptionHandler(ClaimService.ClaimFrozenException.class)
+    public ResponseEntity<ApiErrorResponse> handleClaimFrozen(
+            ClaimService.ClaimFrozenException ex,
+            HttpServletRequest request
+    ) {
+        String requestId = (String) request.getAttribute(RequestIdFilter.ATTRIBUTE_NAME);
+        ApiErrorResponse body = new ApiErrorResponse(
+                "CLAIM_FROZEN",
+                ex.getMessage(),
+                List.of(ex.getMessage()),
+                Instant.now(),
+                requestId
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 }

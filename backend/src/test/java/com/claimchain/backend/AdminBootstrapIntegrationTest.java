@@ -47,6 +47,7 @@ class AdminBootstrapIntegrationTest {
     void cleanDb() {
         jdbcTemplate.update("UPDATE admin_bootstrap_state SET used_at = NULL, used_by_user_id = NULL WHERE id = 1");
         jdbcTemplate.update("UPDATE users SET verified_by = NULL WHERE verified_by IS NOT NULL");
+        jdbcTemplate.update("DELETE FROM claim_scores");
         jdbcTemplate.update("DELETE FROM users WHERE role = 'ADMIN'");
         jdbcTemplate.update("DELETE FROM users WHERE email LIKE ?", "%@admin-bootstrap-test.local");
     }
@@ -154,6 +155,7 @@ class AdminBootstrapNotConfiguredIntegrationTest {
     void cleanDb() {
         jdbcTemplate.update("UPDATE admin_bootstrap_state SET used_at = NULL, used_by_user_id = NULL WHERE id = 1");
         jdbcTemplate.update("UPDATE users SET verified_by = NULL WHERE verified_by IS NOT NULL");
+        jdbcTemplate.update("DELETE FROM claim_scores");
         jdbcTemplate.update("DELETE FROM users WHERE role = 'ADMIN'");
         jdbcTemplate.update("DELETE FROM users WHERE email LIKE ?", "%@admin-bootstrap-test.local");
     }

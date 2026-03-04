@@ -7,6 +7,7 @@ import com.claimchain.backend.dto.ClaimRequestDTO;
 import com.claimchain.backend.dto.ClaimResponseDTO;
 import com.claimchain.backend.dto.DocumentUploadResponseDTO;
 import com.claimchain.backend.model.Claim;
+import com.claimchain.backend.model.ClaimScore;
 import com.claimchain.backend.model.ClaimType;
 import com.claimchain.backend.model.ClaimDocument;
 import com.claimchain.backend.model.ClaimStatus;
@@ -24,6 +25,7 @@ import com.claimchain.backend.repository.ClaimRepository;
 import com.claimchain.backend.repository.ClaimDocumentRepository;
 import com.claimchain.backend.repository.DocumentJobRepository;
 import com.claimchain.backend.repository.UserRepository;
+import com.claimchain.backend.scoring.ScoringEngine;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.claimchain.backend.security.AuthorizationService;
@@ -83,6 +85,9 @@ public class ClaimService {
 
     @Autowired
     private FilenameSanitizer filenameSanitizer;
+
+    @Autowired
+    private ScoringEngine scoringEngine;
 
     @Value("${documents.max-bytes:10000000}")
     private long maxDocumentBytes;
@@ -251,7 +256,37 @@ public class ClaimService {
                 toJson(metadata)
         );
 
+        if (newStatus == ClaimStatus.APPROVED) {
+            scoringEngine.autoScoreOnApprovalIfReady(saved.getId(), admin.getId());
+        }
+
         return mapToDTO(saved);
+    }
+
+    public void rescoreClaim(Long claimId, String adminEmail) {
+        User admin = requireAdminUser(adminEmail);
+        Claim claim = claimRepository.findById(claimId)
+                .orElseThrow(() -> new IllegalArgumentException("Claim not found."));
+
+        enforceClaimNotFrozenForScoringChanges(claim);
+
+        ClaimScore scored = scoringEngine.scoreClaim(claimId, admin.getId(), true);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("claimScoreId", scored.getId());
+        metadata.put("rulesetId", scored.getRuleset() == null ? null : scored.getRuleset().getId());
+        metadata.put("rulesetVersion", scored.getRulesetVersion());
+        metadata.put("scoreTotal", scored.getScoreTotal());
+        metadata.put("grade", scored.getGrade());
+
+        auditService.record(
+                admin.getId(),
+                admin.getRole() == null ? null : admin.getRole().name(),
+                "CLAIM_RESCORED",
+                "CLAIM",
+                claimId,
+                toJson(metadata)
+        );
     }
 
     public ClaimResponseDTO getClaimById(Long claimId, String requesterEmail) {
