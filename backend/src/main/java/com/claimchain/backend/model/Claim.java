@@ -13,6 +13,10 @@ public class Claim {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     private String debtorName;
     private String debtorEmail;
     private String debtorPhone;
@@ -47,6 +51,8 @@ public class Claim {
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+
+    public Long getVersion() { return version; }
 
     public String getDebtorName() { return debtorName; }
     public void setDebtorName(String debtorName) { this.debtorName = debtorName; }
