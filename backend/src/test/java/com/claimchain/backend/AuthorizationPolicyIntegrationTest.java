@@ -100,6 +100,11 @@ class AuthorizationPolicyIntegrationTest {
 
         String claimPayload = """
                 {
+                  "debtorAddress":"55 Debtor Way",
+                  "debtorType":"CONSUMER",
+                  "jurisdictionState":"ny",
+                  "claimType":"SERVICES",
+                  "disputeStatus":"NONE",
                   "clientName":"Client A",
                   "clientContact":"client@example.com",
                   "amount":123.45,

@@ -12,6 +12,11 @@ public class ClaimResponseDTO {
     private String debtorName;
     private String debtorEmail;
     private String debtorPhone;
+    private String debtorAddress;
+    private String debtorType;
+    private String jurisdictionState;
+    private String claimType;
+    private String disputeStatus;
 
     // Client fields
     private String clientName;
@@ -21,8 +26,11 @@ public class ClaimResponseDTO {
     // Claim metadata
     private String debtType;
     private String contactHistory;
+    private BigDecimal originalAmount;
+    private BigDecimal currentAmount;
     private BigDecimal amount;
     private String dateOfDefault;
+    private String lastPaymentDate;
     private String contractFileKey;
 
     // Other

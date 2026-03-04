@@ -21,6 +21,23 @@ public class Claim {
     private String debtorName;
     private String debtorEmail;
     private String debtorPhone;
+    @Column(name = "debtor_address")
+    private String debtorAddress;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "debtor_type", nullable = false, length = 50)
+    private DebtorType debtorType = DebtorType.OTHER;
+
+    @Column(name = "jurisdiction_state", nullable = false, length = 50)
+    private String jurisdictionState = "UNKNOWN";
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "claim_type", nullable = false, length = 50)
+    private ClaimType claimType = ClaimType.OTHER;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "dispute_status", nullable = false, length = 50)
+    private DisputeStatus disputeStatus = DisputeStatus.NONE;
 
     private String clientName;
     private String clientContact;
@@ -30,9 +47,15 @@ public class Claim {
 
     private String serviceDescription;
     private BigDecimal amountOwed;
+    @Column(name = "original_amount", precision = 19, scale = 2)
+    private BigDecimal originalAmount;
+    @Column(name = "current_amount", precision = 19, scale = 2)
+    private BigDecimal currentAmount;
 
     private LocalDate dateOfService;
     private LocalDate dateOfDefault;
+    @Column(name = "last_payment_date")
+    private LocalDate lastPaymentDate;
 
     private String documentUrl; // For public viewing (optional)
     private String contractFileKey; // 🔑 S3 object key for backend
@@ -80,6 +103,21 @@ public class Claim {
     public String getDebtorPhone() { return debtorPhone; }
     public void setDebtorPhone(String debtorPhone) { this.debtorPhone = debtorPhone; }
 
+    public String getDebtorAddress() { return debtorAddress; }
+    public void setDebtorAddress(String debtorAddress) { this.debtorAddress = debtorAddress; }
+
+    public DebtorType getDebtorType() { return debtorType; }
+    public void setDebtorType(DebtorType debtorType) { this.debtorType = debtorType; }
+
+    public String getJurisdictionState() { return jurisdictionState; }
+    public void setJurisdictionState(String jurisdictionState) { this.jurisdictionState = jurisdictionState; }
+
+    public ClaimType getClaimType() { return claimType; }
+    public void setClaimType(ClaimType claimType) { this.claimType = claimType; }
+
+    public DisputeStatus getDisputeStatus() { return disputeStatus; }
+    public void setDisputeStatus(DisputeStatus disputeStatus) { this.disputeStatus = disputeStatus; }
+
     public String getClientName() { return clientName; }
     public void setClientName(String clientName) { this.clientName = clientName; }
 
@@ -101,11 +139,20 @@ public class Claim {
     public BigDecimal getAmountOwed() { return amountOwed; }
     public void setAmountOwed(BigDecimal amountOwed) { this.amountOwed = amountOwed; }
 
+    public BigDecimal getOriginalAmount() { return originalAmount; }
+    public void setOriginalAmount(BigDecimal originalAmount) { this.originalAmount = originalAmount; }
+
+    public BigDecimal getCurrentAmount() { return currentAmount; }
+    public void setCurrentAmount(BigDecimal currentAmount) { this.currentAmount = currentAmount; }
+
     public LocalDate getDateOfService() { return dateOfService; }
     public void setDateOfService(LocalDate dateOfService) { this.dateOfService = dateOfService; }
 
     public LocalDate getDateOfDefault() { return dateOfDefault; }
     public void setDateOfDefault(LocalDate dateOfDefault) { this.dateOfDefault = dateOfDefault; }
+
+    public LocalDate getLastPaymentDate() { return lastPaymentDate; }
+    public void setLastPaymentDate(LocalDate lastPaymentDate) { this.lastPaymentDate = lastPaymentDate; }
 
     public String getDocumentUrl() { return documentUrl; }
     public void setDocumentUrl(String documentUrl) { this.documentUrl = documentUrl; }
