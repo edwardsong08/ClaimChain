@@ -5,6 +5,7 @@ import com.claimchain.backend.model.Claim;
 import com.claimchain.backend.model.ClaimDocument;
 import com.claimchain.backend.model.DocumentJob;
 import com.claimchain.backend.model.DocumentStatus;
+import com.claimchain.backend.model.DocumentType;
 import com.claimchain.backend.model.JobStatus;
 import com.claimchain.backend.model.JobType;
 import com.claimchain.backend.model.Role;
@@ -266,6 +267,7 @@ class DocumentJobRunnerIntegrationTest {
         MvcResult result = mockMvc.perform(
                         multipart("/api/claims/{id}/documents", claimId)
                                 .file(file)
+                                .param("documentType", "INVOICE")
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + providerToken)
                 )
                 .andExpect(status().isCreated())
@@ -320,6 +322,7 @@ class DocumentJobRunnerIntegrationTest {
         document.setSizeBytes(12L);
         document.setStorageKey("missing/" + UUID.randomUUID() + ".txt");
         document.setStatus(DocumentStatus.UPLOADED);
+        document.setDocumentType(DocumentType.OTHER);
         ClaimDocument savedDocument = claimDocumentRepository.saveAndFlush(document);
 
         DocumentJob job = new DocumentJob();

@@ -55,9 +55,10 @@ public class ClaimController {
     public ResponseEntity<DocumentUploadResponseDTO> uploadClaimDocument(
             @PathVariable Long id,
             @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "documentType", required = false) String documentType,
             Principal principal
     ) {
-        DocumentUploadResponseDTO response = claimService.uploadClaimDocument(id, file, principal.getName());
+        DocumentUploadResponseDTO response = claimService.uploadClaimDocument(id, file, documentType, principal.getName());
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

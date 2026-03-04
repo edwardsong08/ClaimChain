@@ -10,6 +10,7 @@ public class ClaimDocumentResponseDTO {
     private String sniffedContentType;
     private Long sizeBytes;
     private String status;
+    private String documentType;
     private Instant createdAt;
 
     public ClaimDocumentResponseDTO() {
@@ -61,6 +62,14 @@ public class ClaimDocumentResponseDTO {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getDocumentType() {
+        return documentType;
+    }
+
+    public void setDocumentType(String documentType) {
+        this.documentType = documentType;
     }
 
     public Instant getCreatedAt() {

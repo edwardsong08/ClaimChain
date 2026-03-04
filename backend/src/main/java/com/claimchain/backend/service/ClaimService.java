@@ -10,6 +10,7 @@ import com.claimchain.backend.model.ClaimDocument;
 import com.claimchain.backend.model.ClaimStatus;
 import com.claimchain.backend.model.DocumentJob;
 import com.claimchain.backend.model.DocumentStatus;
+import com.claimchain.backend.model.DocumentType;
 import com.claimchain.backend.model.JobStatus;
 import com.claimchain.backend.model.JobType;
 import com.claimchain.backend.model.Role;
@@ -230,11 +231,17 @@ public class ClaimService {
         return mapToDTO(claim);
     }
 
-    public DocumentUploadResponseDTO uploadClaimDocument(Long claimId, MultipartFile file, String requesterEmail) {
+    public DocumentUploadResponseDTO uploadClaimDocument(
+            Long claimId,
+            MultipartFile file,
+            String documentTypeValue,
+            String requesterEmail
+    ) {
         User requester = authorizationService.requireUser(requesterEmail);
         Claim claim = claimRepository.findById(claimId)
                 .orElseThrow(ClaimNotFoundException::new);
         authorizationService.requireClaimAccess(claim, requester);
+        DocumentType documentType = parseDocumentType(documentTypeValue);
 
         if (file == null || file.isEmpty()) {
             throw new DocumentValidationException("DOCUMENT_EMPTY", "File must not be empty.");
@@ -268,6 +275,7 @@ public class ClaimService {
         document.setSizeBytes((long) bytes.length);
         document.setStorageKey(storageKey);
         document.setStatus(DocumentStatus.UPLOADED);
+        document.setDocumentType(documentType);
         ClaimDocument savedDocument = claimDocumentRepository.save(document);
 
         DocumentJob job = new DocumentJob();
@@ -359,6 +367,7 @@ public class ClaimService {
         dto.setSniffedContentType(document.getSniffedContentType());
         dto.setSizeBytes(document.getSizeBytes());
         dto.setStatus(document.getStatus().name());
+        dto.setDocumentType(document.getDocumentType() == null ? null : document.getDocumentType().name());
         dto.setCreatedAt(document.getCreatedAt());
         return dto;
     }
@@ -393,6 +402,18 @@ public class ClaimService {
             return ClaimStatus.valueOf(normalized);
         } catch (IllegalArgumentException ex) {
             throw new IllegalArgumentException("Invalid status: " + value);
+        }
+    }
+
+    private DocumentType parseDocumentType(String value) {
+        String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            throw new DocumentValidationException("DOCUMENT_TYPE_REQUIRED", "documentType is required");
+        }
+        try {
+            return DocumentType.valueOf(normalized);
+        } catch (IllegalArgumentException ex) {
+            throw new DocumentValidationException("DOCUMENT_TYPE_INVALID", "Invalid documentType: " + value);
         }
     }
 
