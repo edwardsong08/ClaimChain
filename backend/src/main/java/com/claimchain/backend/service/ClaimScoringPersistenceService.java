@@ -10,6 +10,7 @@ import com.claimchain.backend.repository.ClaimRepository;
 import com.claimchain.backend.repository.ClaimScoreRepository;
 import com.claimchain.backend.repository.RulesetRepository;
 import com.claimchain.backend.repository.UserRepository;
+import com.claimchain.backend.scoring.ScoringTrigger;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -60,7 +61,8 @@ public class ClaimScoringPersistenceService {
             Integer subscoreOperationalRisk,
             String explainabilityJson,
             String featureSnapshotJson,
-            Long scoredByUserId
+            Long scoredByUserId,
+            ScoringTrigger trigger
     ) {
         Claim claim = claimRepository.findById(claimId)
                 .orElseThrow(() -> new IllegalArgumentException("Claim not found."));
@@ -76,6 +78,7 @@ public class ClaimScoringPersistenceService {
         String normalizedGrade = normalizeRequiredString(grade, "grade");
         String normalizedExplainability = normalizeRequiredString(explainabilityJson, "explainabilityJson");
         String normalizedFeatureSnapshot = normalizeRequiredString(featureSnapshotJson, "featureSnapshotJson");
+        ScoringTrigger effectiveTrigger = trigger == null ? ScoringTrigger.APPROVAL : trigger;
 
         User scoredByUser = null;
         if (scoredByUserId != null) {
@@ -109,6 +112,7 @@ public class ClaimScoringPersistenceService {
         metadata.put("scoreTotal", scoreTotal);
         metadata.put("grade", normalizedGrade);
         metadata.put("eligible", eligible);
+        metadata.put("trigger", effectiveTrigger.name());
 
         auditService.record(
                 actorId,

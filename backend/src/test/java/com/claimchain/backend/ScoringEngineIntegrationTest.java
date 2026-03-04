@@ -175,6 +175,8 @@ class ScoringEngineIntegrationTest {
         assertThat(firstScore.getRulesetVersion()).isEqualTo(1);
         assertThat(firstScore.isEligible()).isTrue();
         assertThat(firstScore.getScoreTotal()).isGreaterThan(0);
+        JsonNode firstExplainability = objectMapper.readTree(firstScore.getExplainabilityJson());
+        assertThat(firstExplainability.path("trigger").asText()).isEqualTo("APPROVAL");
 
         createAndActivateScoringRuleset(SCORING_CONFIG_V2, 2);
 
@@ -191,6 +193,8 @@ class ScoringEngineIntegrationTest {
 
         assertThat(latest.getRulesetVersion()).isEqualTo(2);
         assertThat(latest.getScoreTotal()).isNotEqualTo(previous.getScoreTotal());
+        JsonNode latestExplainability = objectMapper.readTree(latest.getExplainabilityJson());
+        assertThat(latestExplainability.path("trigger").asText()).isEqualTo("ADMIN_RESCORE");
 
         Integer rescoreAuditCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM audit_events WHERE action = 'CLAIM_RESCORED' AND entity_type = 'CLAIM' AND entity_id = ?",
@@ -198,6 +202,12 @@ class ScoringEngineIntegrationTest {
                 claimId
         );
         assertThat(rescoreAuditCount).isEqualTo(1);
+        String rescoreAuditMetadata = jdbcTemplate.queryForObject(
+                "SELECT metadata_json FROM audit_events WHERE action = 'CLAIM_RESCORED' AND entity_type = 'CLAIM' AND entity_id = ? ORDER BY created_at DESC LIMIT 1",
+                String.class,
+                claimId
+        );
+        assertThat(rescoreAuditMetadata).contains("\"trigger\":\"ADMIN_RESCORE\"");
     }
 
     @Test

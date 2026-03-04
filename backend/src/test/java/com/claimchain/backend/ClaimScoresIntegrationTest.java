@@ -14,6 +14,7 @@ import com.claimchain.backend.repository.ClaimRepository;
 import com.claimchain.backend.repository.ClaimScoreRepository;
 import com.claimchain.backend.repository.RulesetRepository;
 import com.claimchain.backend.repository.UserRepository;
+import com.claimchain.backend.scoring.ScoringTrigger;
 import com.claimchain.backend.service.ClaimScoringPersistenceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -118,7 +119,8 @@ class ClaimScoresIntegrationTest {
                 70,
                 "{\"reason\":\"good docs\"}",
                 "{\"snapshot\":\"v1\"}",
-                adminUser.getId()
+                adminUser.getId(),
+                ScoringTrigger.ADMIN_RESCORE
         );
 
         ClaimScore saved = claimScoreRepository.findFirstByClaimIdOrderByScoredAtDesc(claimId).orElseThrow();

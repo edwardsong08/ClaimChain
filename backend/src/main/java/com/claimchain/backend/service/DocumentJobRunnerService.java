@@ -8,8 +8,11 @@ import com.claimchain.backend.model.JobStatus;
 import com.claimchain.backend.model.JobType;
 import com.claimchain.backend.repository.ClaimDocumentRepository;
 import com.claimchain.backend.repository.DocumentJobRepository;
+import com.claimchain.backend.scoring.ScoringEngine;
 import com.claimchain.backend.storage.StorageService;
 import org.apache.tika.Tika;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -24,6 +27,7 @@ import java.util.List;
 @Service
 public class DocumentJobRunnerService {
 
+    private static final Logger log = LoggerFactory.getLogger(DocumentJobRunnerService.class);
     private static final int DEFAULT_LIMIT = 5;
     private static final int MAX_LIMIT = 100;
     private static final int DEFAULT_MAX_ATTEMPTS = 3;
@@ -34,6 +38,7 @@ public class DocumentJobRunnerService {
     private final ClaimDocumentRepository claimDocumentRepository;
     private final StorageService storageService;
     private final MalwareScanService malwareScanService;
+    private final ScoringEngine scoringEngine;
     private final TransactionTemplate requiresNewTransaction;
     private final Tika tika;
 
@@ -42,12 +47,14 @@ public class DocumentJobRunnerService {
             ClaimDocumentRepository claimDocumentRepository,
             StorageService storageService,
             MalwareScanService malwareScanService,
+            ScoringEngine scoringEngine,
             PlatformTransactionManager transactionManager
     ) {
         this.documentJobRepository = documentJobRepository;
         this.claimDocumentRepository = claimDocumentRepository;
         this.storageService = storageService;
         this.malwareScanService = malwareScanService;
+        this.scoringEngine = scoringEngine;
         this.tika = new Tika();
 
         this.requiresNewTransaction = new TransactionTemplate(transactionManager);
@@ -95,11 +102,25 @@ public class DocumentJobRunnerService {
 
         if (jobType == JobType.TIKA_EXTRACT) {
             processTikaExtractionJob(job, document);
+            triggerAutoScoringAfterExtraction(document);
             return true;
         }
 
         processMalwareScanJob(job, document);
         return true;
+    }
+
+    private void triggerAutoScoringAfterExtraction(ClaimDocument document) {
+        if (document == null || document.getClaim() == null || document.getClaim().getId() == null) {
+            return;
+        }
+
+        Long claimId = document.getClaim().getId();
+        try {
+            scoringEngine.autoScoreOnDocumentsReadyIfApproved(claimId);
+        } catch (Exception ex) {
+            log.warn("Auto-scoring on document completion failed for claimId={}", claimId, ex);
+        }
     }
 
     private void processTikaExtractionJob(DocumentJob job, ClaimDocument document) {

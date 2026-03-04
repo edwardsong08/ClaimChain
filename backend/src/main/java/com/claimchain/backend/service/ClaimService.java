@@ -26,6 +26,7 @@ import com.claimchain.backend.repository.ClaimDocumentRepository;
 import com.claimchain.backend.repository.DocumentJobRepository;
 import com.claimchain.backend.repository.UserRepository;
 import com.claimchain.backend.scoring.ScoringEngine;
+import com.claimchain.backend.scoring.ScoringTrigger;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.claimchain.backend.security.AuthorizationService;
@@ -270,7 +271,7 @@ public class ClaimService {
 
         enforceClaimNotFrozenForScoringChanges(claim);
 
-        ClaimScore scored = scoringEngine.scoreClaim(claimId, admin.getId(), true);
+        ClaimScore scored = scoringEngine.scoreClaim(claimId, admin.getId(), true, ScoringTrigger.ADMIN_RESCORE);
 
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("claimScoreId", scored.getId());
@@ -278,6 +279,7 @@ public class ClaimService {
         metadata.put("rulesetVersion", scored.getRulesetVersion());
         metadata.put("scoreTotal", scored.getScoreTotal());
         metadata.put("grade", scored.getGrade());
+        metadata.put("trigger", ScoringTrigger.ADMIN_RESCORE.name());
 
         auditService.record(
                 admin.getId(),

@@ -3,11 +3,13 @@ package com.claimchain.backend.scoring;
 import com.claimchain.backend.model.Claim;
 import com.claimchain.backend.model.ClaimDocument;
 import com.claimchain.backend.model.ClaimScore;
+import com.claimchain.backend.model.ClaimStatus;
 import com.claimchain.backend.model.DisputeStatus;
 import com.claimchain.backend.model.ExtractionStatus;
 import com.claimchain.backend.model.Ruleset;
 import com.claimchain.backend.model.RulesetStatus;
 import com.claimchain.backend.model.RulesetType;
+import com.claimchain.backend.repository.ClaimScoreRepository;
 import com.claimchain.backend.repository.ClaimDocumentRepository;
 import com.claimchain.backend.repository.ClaimRepository;
 import com.claimchain.backend.repository.RulesetRepository;
@@ -42,6 +44,7 @@ public class ScoringEngine {
 
     private final ClaimRepository claimRepository;
     private final ClaimDocumentRepository claimDocumentRepository;
+    private final ClaimScoreRepository claimScoreRepository;
     private final RulesetRepository rulesetRepository;
     private final ClaimScoringPersistenceService claimScoringPersistenceService;
     private final ObjectMapper objectMapper;
@@ -49,12 +52,14 @@ public class ScoringEngine {
     public ScoringEngine(
             ClaimRepository claimRepository,
             ClaimDocumentRepository claimDocumentRepository,
+            ClaimScoreRepository claimScoreRepository,
             RulesetRepository rulesetRepository,
             ClaimScoringPersistenceService claimScoringPersistenceService,
             ObjectMapper objectMapper
     ) {
         this.claimRepository = claimRepository;
         this.claimDocumentRepository = claimDocumentRepository;
+        this.claimScoreRepository = claimScoreRepository;
         this.rulesetRepository = rulesetRepository;
         this.claimScoringPersistenceService = claimScoringPersistenceService;
         this.objectMapper = objectMapper;
@@ -62,15 +67,27 @@ public class ScoringEngine {
 
     @Transactional
     public ClaimScore scoreClaim(Long claimId, Long scoredByUserIdNullable, boolean isRescore) {
+        ScoringTrigger defaultTrigger = isRescore ? ScoringTrigger.ADMIN_RESCORE : ScoringTrigger.APPROVAL;
+        return scoreClaim(claimId, scoredByUserIdNullable, isRescore, defaultTrigger);
+    }
+
+    @Transactional
+    public ClaimScore scoreClaim(
+            Long claimId,
+            Long scoredByUserIdNullable,
+            boolean isRescore,
+            ScoringTrigger trigger
+    ) {
         Claim claim = claimRepository.findById(claimId)
                 .orElseThrow(() -> new IllegalArgumentException("Claim not found."));
 
         Ruleset activeRuleset = rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE)
                 .orElseThrow(() -> new IllegalArgumentException("No ACTIVE SCORING ruleset found."));
 
+        ScoringTrigger effectiveTrigger = trigger == null ? ScoringTrigger.APPROVAL : trigger;
         ScoringRulesetConfig config = parseConfig(activeRuleset.getConfigJson());
         List<ClaimDocument> documents = claimDocumentRepository.findByClaimId(claim.getId());
-        ScoreComputation computation = evaluate(claim, documents, config, isRescore);
+        ScoreComputation computation = evaluate(claim, documents, config, isRescore, effectiveTrigger);
 
         return claimScoringPersistenceService.recordScoreRun(
                 claim.getId(),
@@ -85,7 +102,8 @@ public class ScoringEngine {
                 computation.operationalRiskSubscore(),
                 computation.explainabilityJson(),
                 computation.featureSnapshotJson(),
-                scoredByUserIdNullable
+                scoredByUserIdNullable,
+                effectiveTrigger
         );
     }
 
@@ -97,6 +115,9 @@ public class ScoringEngine {
 
         Claim claim = claimRepository.findById(claimId)
                 .orElseThrow(() -> new IllegalArgumentException("Claim not found."));
+        if (!canAutoTriggerForStatus(claim.getStatus())) {
+            return false;
+        }
         ScoringRulesetConfig config = parseConfig(activeRulesetOpt.get().getConfigJson());
         List<ClaimDocument> documents = claimDocumentRepository.findByClaimId(claim.getId());
 
@@ -104,7 +125,35 @@ public class ScoringEngine {
             return false;
         }
 
-        scoreClaim(claim.getId(), scoredByUserIdNullable, false);
+        scoreClaim(claim.getId(), scoredByUserIdNullable, false, ScoringTrigger.APPROVAL);
+        return true;
+    }
+
+    public boolean autoScoreOnDocumentsReadyIfApproved(Long claimId) {
+        Optional<Ruleset> activeRulesetOpt = rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE);
+        if (activeRulesetOpt.isEmpty()) {
+            return false;
+        }
+
+        Claim claim = claimRepository.findById(claimId)
+                .orElseThrow(() -> new IllegalArgumentException("Claim not found."));
+
+        if (!canAutoTriggerForStatus(claim.getStatus())) {
+            return false;
+        }
+
+        ScoringRulesetConfig config = parseConfig(activeRulesetOpt.get().getConfigJson());
+        List<ClaimDocument> documents = claimDocumentRepository.findByClaimId(claim.getId());
+        if (!isReadyForAutoScoring(documents, config)) {
+            return false;
+        }
+
+        Optional<ClaimScore> latestScoreOpt = claimScoreRepository.findFirstByClaimIdOrderByScoredAtDesc(claim.getId());
+        if (latestScoreOpt.isPresent() && latestScoreOpt.get().isEligible()) {
+            return false;
+        }
+
+        scoreClaim(claim.getId(), null, false, ScoringTrigger.DOC_READY);
         return true;
     }
 
@@ -133,7 +182,8 @@ public class ScoringEngine {
             Claim claim,
             List<ClaimDocument> documents,
             ScoringRulesetConfig config,
-            boolean isRescore
+            boolean isRescore,
+            ScoringTrigger trigger
     ) {
         DerivedMetrics metrics = buildMetrics(claim, documents);
         ScoringRulesetConfig.EligibilityConfig eligibility = config.getEligibility();
@@ -166,7 +216,7 @@ public class ScoringEngine {
 
         boolean eligible = eligibilityFailures.isEmpty();
         if (!eligible) {
-            String explainabilityJson = buildExplainabilityJson(eligibilityFailures, List.of());
+            String explainabilityJson = buildExplainabilityJson(trigger, eligibilityFailures, List.of());
             String featureSnapshotJson = buildFeatureSnapshotJson(
                     claim,
                     metrics,
@@ -234,7 +284,7 @@ public class ScoringEngine {
         total = clamp(total, 0, 100);
         String grade = resolveGrade(total, config.getGradeBands());
 
-        String explainabilityJson = buildExplainabilityJson(eligibilityFailures, contributions);
+        String explainabilityJson = buildExplainabilityJson(trigger, eligibilityFailures, contributions);
         String featureSnapshotJson = buildFeatureSnapshotJson(
                 claim,
                 metrics,
@@ -476,11 +526,24 @@ public class ScoringEngine {
         return "F";
     }
 
-    private String buildExplainabilityJson(List<String> eligibilityFailures, List<ScoringContribution> contributions) {
+    private String buildExplainabilityJson(
+            ScoringTrigger trigger,
+            List<String> eligibilityFailures,
+            List<ScoringContribution> contributions
+    ) {
         Map<String, Object> explainability = new LinkedHashMap<>();
+        explainability.put("trigger", trigger == null ? ScoringTrigger.APPROVAL.name() : trigger.name());
         explainability.put("eligibleReasons", eligibilityFailures);
         explainability.put("contributions", contributions);
         return toJson(explainability, "explainability");
+    }
+
+    private boolean canAutoTriggerForStatus(ClaimStatus status) {
+        return status == ClaimStatus.APPROVED && !isFrozenStatus(status);
+    }
+
+    private boolean isFrozenStatus(ClaimStatus status) {
+        return status == ClaimStatus.PACKAGED || status == ClaimStatus.LISTED || status == ClaimStatus.SOLD;
     }
 
     private String buildFeatureSnapshotJson(
