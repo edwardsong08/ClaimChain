@@ -11,6 +11,8 @@ public class ClaimDocumentResponseDTO {
     private Long sizeBytes;
     private String status;
     private String documentType;
+    private String extractionStatus;
+    private Integer extractedCharCount;
     private Instant createdAt;
 
     public ClaimDocumentResponseDTO() {
@@ -70,6 +72,22 @@ public class ClaimDocumentResponseDTO {
 
     public void setDocumentType(String documentType) {
         this.documentType = documentType;
+    }
+
+    public String getExtractionStatus() {
+        return extractionStatus;
+    }
+
+    public void setExtractionStatus(String extractionStatus) {
+        this.extractionStatus = extractionStatus;
+    }
+
+    public Integer getExtractedCharCount() {
+        return extractedCharCount;
+    }
+
+    public void setExtractedCharCount(Integer extractedCharCount) {
+        this.extractedCharCount = extractedCharCount;
     }
 
     public Instant getCreatedAt() {

@@ -3,6 +3,7 @@ package com.claimchain.backend.service;
 import com.claimchain.backend.model.ClaimDocument;
 import com.claimchain.backend.model.DocumentJob;
 import com.claimchain.backend.model.DocumentStatus;
+import com.claimchain.backend.model.ExtractionStatus;
 import com.claimchain.backend.model.JobStatus;
 import com.claimchain.backend.model.JobType;
 import com.claimchain.backend.repository.ClaimDocumentRepository;
@@ -27,6 +28,7 @@ public class DocumentJobRunnerService {
     private static final int MAX_LIMIT = 100;
     private static final int DEFAULT_MAX_ATTEMPTS = 3;
     private static final int MAX_ERROR_LENGTH = 2000;
+    private static final int MAX_EXTRACTION_ERROR_MESSAGE_LENGTH = 255;
 
     private final DocumentJobRepository documentJobRepository;
     private final ClaimDocumentRepository claimDocumentRepository;
@@ -104,27 +106,46 @@ public class DocumentJobRunnerService {
         document.setStatus(DocumentStatus.PROCESSING);
         claimDocumentRepository.save(document);
 
-        try (InputStream inputStream = storageService.load(document.getStorageKey())) {
-            String extractedText = tika.parseToString(inputStream);
-            String extractedStorageKey = document.getStorageKey() + ".tika.txt";
+        InputStream storageInputStream;
+        try {
+            storageInputStream = storageService.load(document.getStorageKey());
+        } catch (Exception ex) {
+            handleFailure(job, document, ex, "STORAGE_ERROR", true);
+            return;
+        }
 
+        String extractedText;
+        try (InputStream inputStream = storageInputStream) {
+            extractedText = tika.parseToString(inputStream);
+        } catch (Exception ex) {
+            handleFailure(job, document, ex, "TIKA_ERROR", true);
+            return;
+        }
+
+        String extractedStorageKey = document.getStorageKey() + ".tika.txt";
+        try {
             byte[] extractedBytes = extractedText.getBytes(StandardCharsets.UTF_8);
             storageService.save(new ByteArrayInputStream(extractedBytes), extractedStorageKey);
-
-            Instant completedAt = Instant.now();
-            document.setExtractedStorageKey(extractedStorageKey);
-            document.setExtractedAt(completedAt);
-            document.setStatus(DocumentStatus.READY);
-            claimDocumentRepository.save(document);
-
-            job.setStatus(JobStatus.DONE);
-            job.setLastError(null);
-            job.setFinishedAt(completedAt);
-            job.setNextRunAt(null);
-            documentJobRepository.save(job);
         } catch (Exception ex) {
-            handleFailure(job, document, ex);
+            handleFailure(job, document, ex, "STORAGE_ERROR", true);
+            return;
         }
+
+        Instant completedAt = Instant.now();
+        document.setExtractedStorageKey(extractedStorageKey);
+        document.setExtractedAt(completedAt);
+        document.setStatus(DocumentStatus.READY);
+        document.setExtractionStatus(ExtractionStatus.SUCCEEDED);
+        document.setExtractedCharCount(extractedText == null || extractedText.isBlank() ? 0 : extractedText.length());
+        document.setExtractionErrorCode(null);
+        document.setExtractionErrorMessage(null);
+        claimDocumentRepository.save(document);
+
+        job.setStatus(JobStatus.DONE);
+        job.setLastError(null);
+        job.setFinishedAt(completedAt);
+        job.setNextRunAt(null);
+        documentJobRepository.save(job);
     }
 
     private void processMalwareScanJob(DocumentJob job, ClaimDocument document) {
@@ -143,11 +164,17 @@ public class DocumentJobRunnerService {
             job.setNextRunAt(null);
             documentJobRepository.save(job);
         } catch (Exception ex) {
-            handleFailure(job, document, ex);
+            handleFailure(job, document, ex, null, false);
         }
     }
 
-    private void handleFailure(DocumentJob job, ClaimDocument document, Exception ex) {
+    private void handleFailure(
+            DocumentJob job,
+            ClaimDocument document,
+            Exception ex,
+            String errorCode,
+            boolean updateExtractionSignals
+    ) {
         int attemptCount = job.getAttemptCount() == null ? 0 : job.getAttemptCount();
         int nextAttemptCount = attemptCount + 1;
         int maxAttempts = job.getMaxAttempts() == null ? DEFAULT_MAX_ATTEMPTS : job.getMaxAttempts();
@@ -161,11 +188,23 @@ public class DocumentJobRunnerService {
             job.setFinishedAt(failedAt);
             job.setNextRunAt(null);
             document.setStatus(DocumentStatus.FAILED);
+            if (updateExtractionSignals) {
+                document.setExtractionStatus(ExtractionStatus.TERMINAL_FAILED);
+            }
         } else {
             job.setStatus(JobStatus.QUEUED);
             job.setFinishedAt(null);
             job.setNextRunAt(failedAt.plusSeconds(computeBackoffSeconds(nextAttemptCount)));
             document.setStatus(DocumentStatus.QUEUED);
+            if (updateExtractionSignals) {
+                document.setExtractionStatus(ExtractionStatus.FAILED);
+            }
+        }
+
+        if (updateExtractionSignals) {
+            document.setExtractedCharCount(null);
+            document.setExtractionErrorCode(normalizeExtractionErrorCode(errorCode));
+            document.setExtractionErrorMessage(truncateExtractionErrorMessage(ex));
         }
 
         claimDocumentRepository.save(document);
@@ -181,6 +220,25 @@ public class DocumentJobRunnerService {
             return raw;
         }
         return raw.substring(0, MAX_ERROR_LENGTH);
+    }
+
+    private String normalizeExtractionErrorCode(String code) {
+        String candidate = code == null || code.isBlank() ? "UNKNOWN_ERROR" : code.trim().toUpperCase();
+        if (candidate.length() <= 80) {
+            return candidate;
+        }
+        return candidate.substring(0, 80);
+    }
+
+    private String truncateExtractionErrorMessage(Exception ex) {
+        String raw = ex.getMessage();
+        if (raw == null || raw.isBlank()) {
+            raw = ex.getClass().getSimpleName();
+        }
+        if (raw.length() <= MAX_EXTRACTION_ERROR_MESSAGE_LENGTH) {
+            return raw;
+        }
+        return raw.substring(0, MAX_EXTRACTION_ERROR_MESSAGE_LENGTH);
     }
 
     private int normalizeLimit(int limit) {

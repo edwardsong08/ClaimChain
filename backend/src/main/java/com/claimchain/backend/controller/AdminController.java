@@ -2,12 +2,15 @@ package com.claimchain.backend.controller;
 
 import com.claimchain.backend.dto.AdminClaimDecisionRequestDTO;
 import com.claimchain.backend.dto.AdminBootstrapRequestDTO;
+import com.claimchain.backend.dto.ClaimFreezeOverrideRequestDTO;
+import com.claimchain.backend.dto.ClaimScoreResponseDTO;
 import com.claimchain.backend.dto.ClaimResponseDTO;
 import com.claimchain.backend.dto.RejectUserRequestDTO;
 import com.claimchain.backend.model.User;
 import com.claimchain.backend.service.AdminService;
 import com.claimchain.backend.service.AuthService;
 import com.claimchain.backend.service.ClaimService;
+import com.claimchain.backend.service.ClaimScoringPersistenceService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,11 +27,18 @@ public class AdminController {
     private final AuthService authService;
     private final AdminService adminService;
     private final ClaimService claimService;
+    private final ClaimScoringPersistenceService claimScoringPersistenceService;
 
-    public AdminController(AuthService authService, AdminService adminService, ClaimService claimService) {
+    public AdminController(
+            AuthService authService,
+            AdminService adminService,
+            ClaimService claimService,
+            ClaimScoringPersistenceService claimScoringPersistenceService
+    ) {
         this.authService = authService;
         this.adminService = adminService;
         this.claimService = claimService;
+        this.claimScoringPersistenceService = claimScoringPersistenceService;
     }
 
     @PostMapping("/bootstrap")
@@ -90,5 +100,25 @@ public class AdminController {
     ) {
         ClaimResponseDTO response = claimService.startReview(claimId, principal.getName());
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/claims/{claimId}/override-freeze")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> requestClaimFreezeOverride(
+            @PathVariable Long claimId,
+            @Valid @RequestBody ClaimFreezeOverrideRequestDTO request,
+            Principal principal
+    ) {
+        claimService.requestFreezeOverride(claimId, request, principal.getName());
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/claims/{claimId}/scores")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<ClaimScoreResponseDTO>> listClaimScores(
+            @PathVariable Long claimId,
+            Principal principal
+    ) {
+        return ResponseEntity.ok(claimScoringPersistenceService.listScoreRunsForClaim(claimId, principal.getName()));
     }
 }

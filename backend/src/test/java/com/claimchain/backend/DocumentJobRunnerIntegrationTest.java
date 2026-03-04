@@ -6,6 +6,7 @@ import com.claimchain.backend.model.ClaimDocument;
 import com.claimchain.backend.model.DocumentJob;
 import com.claimchain.backend.model.DocumentStatus;
 import com.claimchain.backend.model.DocumentType;
+import com.claimchain.backend.model.ExtractionStatus;
 import com.claimchain.backend.model.JobStatus;
 import com.claimchain.backend.model.JobType;
 import com.claimchain.backend.model.Role;
@@ -136,6 +137,8 @@ class DocumentJobRunnerIntegrationTest {
 
         ClaimDocument document = claimDocumentRepository.findById(documentId).orElseThrow();
         assertThat(document.getStatus()).isEqualTo(DocumentStatus.UPLOADED);
+        assertThat(document.getExtractionStatus()).isEqualTo(ExtractionStatus.NOT_STARTED);
+        assertThat(document.getExtractedCharCount()).isNull();
     }
 
     @Test
@@ -166,6 +169,11 @@ class DocumentJobRunnerIntegrationTest {
         assertThat(updatedDocument.getStatus()).isEqualTo(DocumentStatus.READY);
         assertThat(updatedDocument.getExtractedStorageKey()).isNotBlank();
         assertThat(updatedDocument.getExtractedAt()).isNotNull();
+        assertThat(updatedDocument.getExtractionStatus()).isEqualTo(ExtractionStatus.SUCCEEDED);
+        assertThat(updatedDocument.getExtractedCharCount()).isNotNull();
+        assertThat(updatedDocument.getExtractedCharCount()).isGreaterThan(0);
+        assertThat(updatedDocument.getExtractionErrorCode()).isNull();
+        assertThat(updatedDocument.getExtractionErrorMessage()).isNull();
         assertThat(storageService.exists(updatedDocument.getExtractedStorageKey())).isTrue();
 
         String extractedText;
@@ -221,6 +229,11 @@ class DocumentJobRunnerIntegrationTest {
         assertThat(updatedJob.getNextRunAt()).isBefore(afterRun.plusSeconds(45));
         assertThat(updatedJob.getFinishedAt()).isNull();
         assertThat(updatedDocument.getStatus()).isEqualTo(DocumentStatus.QUEUED);
+        assertThat(updatedDocument.getExtractionStatus()).isEqualTo(ExtractionStatus.FAILED);
+        assertThat(updatedDocument.getExtractionErrorCode()).isEqualTo("STORAGE_ERROR");
+        assertThat(updatedDocument.getExtractionErrorMessage()).isNotBlank();
+        assertThat(updatedDocument.getExtractionErrorMessage().length()).isLessThanOrEqualTo(255);
+        assertThat(updatedDocument.getExtractedCharCount()).isNull();
 
         mockMvc.perform(
                         post("/api/admin/jobs/run-document-jobs")
@@ -254,6 +267,9 @@ class DocumentJobRunnerIntegrationTest {
         assertThat(updatedJob.getFinishedAt()).isNotNull();
         assertThat(updatedJob.getNextRunAt()).isNull();
         assertThat(updatedDocument.getStatus()).isEqualTo(DocumentStatus.FAILED);
+        assertThat(updatedDocument.getExtractionStatus()).isEqualTo(ExtractionStatus.TERMINAL_FAILED);
+        assertThat(updatedDocument.getExtractionErrorCode()).isEqualTo("STORAGE_ERROR");
+        assertThat(updatedDocument.getExtractionErrorMessage()).isNotBlank();
     }
 
     private Long uploadTextDocument(Long claimId, String textContent) throws Exception {

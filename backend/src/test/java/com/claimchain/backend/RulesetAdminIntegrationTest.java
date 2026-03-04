@@ -41,6 +41,59 @@ class RulesetAdminIntegrationTest {
     private static final String ADMIN_EMAIL = "admin@ruleset-admin-test.local";
     private static final String PROVIDER_EMAIL = "provider@ruleset-admin-test.local";
     private static final String TEST_EMAIL_PATTERN = "%@ruleset-admin-test.local";
+    private static final String VALID_SCORING_CONFIG_V1 = """
+            {
+              "weights": {
+                "enforceability": 0.30,
+                "documentation": 0.25,
+                "collectability": 0.25,
+                "operationalRisk": 0.20
+              },
+              "gradeBands": [
+                {"grade":"A","minScore":80},
+                {"grade":"B","minScore":60},
+                {"grade":"C","minScore":0}
+              ],
+              "eligibility": {"requiredClaimStatus":"APPROVED"},
+              "caps": {"overall":100}
+            }
+            """;
+    private static final String VALID_SCORING_CONFIG_V2 = """
+            {
+              "weights": {
+                "enforceability": 0.35,
+                "documentation": 0.20,
+                "collectability": 0.25,
+                "operationalRisk": 0.20
+              },
+              "gradeBands": [
+                {"grade":"A","minScore":85},
+                {"grade":"B","minScore":65},
+                {"grade":"C","minScore":0}
+              ],
+              "eligibility": {"requiredClaimStatus":"APPROVED"},
+              "caps": {"overall":100}
+            }
+            """;
+    private static final String INVALID_SCORING_CONFIG = """
+            {
+              "weights": {
+                "enforceability": 0.60,
+                "documentation": 0.40,
+                "collectability": 0.40,
+                "operationalRisk": 0.30
+              },
+              "gradeBands": [
+                {"grade":"A","minScore":80},
+                {"grade":"C","minScore":0}
+              ]
+            }
+            """;
+    private static final String INVALID_PACKAGING_CONFIG = """
+            {
+              "eligibility": {}
+            }
+            """;
 
     @Autowired
     private MockMvc mockMvc;
@@ -93,11 +146,63 @@ class RulesetAdminIntegrationTest {
     }
 
     @Test
+    void activatingInvalidScoringRulesetReturnsRulesetInvalid() throws Exception {
+        Long draftId = createDraft("SCORING", INVALID_SCORING_CONFIG, 1);
+
+        MvcResult result = mockMvc.perform(
+                        post("/api/admin/rulesets/{id}/activate", draftId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("RULESET_INVALID"))
+                .andExpect(jsonPath("$.message").value("Ruleset config is invalid."))
+                .andExpect(jsonPath("$.details").isArray())
+                .andReturn();
+
+        ApiErrorResponse error = objectMapper.readValue(
+                result.getResponse().getContentAsString(),
+                ApiErrorResponse.class
+        );
+        assertThat(error.getDetails()).anyMatch(detail -> detail.contains("weights"));
+        assertThat(error.getRequestId()).isNotBlank();
+
+        Ruleset draft = rulesetRepository.findById(draftId).orElseThrow();
+        assertThat(draft.getStatus()).isEqualTo(RulesetStatus.DRAFT);
+    }
+
+    @Test
+    void activatingInvalidPackagingRulesetReturnsRulesetInvalid() throws Exception {
+        Long draftId = createDraft("PACKAGING", INVALID_PACKAGING_CONFIG, 1);
+
+        MvcResult result = mockMvc.perform(
+                        post("/api/admin/rulesets/{id}/activate", draftId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("RULESET_INVALID"))
+                .andExpect(jsonPath("$.message").value("Ruleset config is invalid."))
+                .andExpect(jsonPath("$.details").isArray())
+                .andReturn();
+
+        ApiErrorResponse error = objectMapper.readValue(
+                result.getResponse().getContentAsString(),
+                ApiErrorResponse.class
+        );
+        assertThat(error.getDetails()).anyMatch(detail -> detail.contains("eligibility"));
+        assertThat(error.getRequestId()).isNotBlank();
+
+        Ruleset draft = rulesetRepository.findById(draftId).orElseThrow();
+        assertThat(draft.getStatus()).isEqualTo(RulesetStatus.DRAFT);
+    }
+
+    @Test
     void adminCanCreateAndActivateRulesets_withSingleActivePerTypeAndAudit() throws Exception {
-        Long draftOneId = createDraft("SCORING", "{\"threshold\":650}", 1);
+        Long draftOneId = createDraft("SCORING", VALID_SCORING_CONFIG_V1, 1);
         activateDraft(draftOneId, 1);
 
-        Long draftTwoId = createDraft("SCORING", "{\"threshold\":700}", 2);
+        Long draftTwoId = createDraft("SCORING", VALID_SCORING_CONFIG_V2, 2);
         activateDraft(draftTwoId, 2);
 
         List<Ruleset> scoringRulesets = rulesetRepository.findByTypeOrderByVersionDesc(RulesetType.SCORING);
@@ -210,6 +315,7 @@ class RulesetAdminIntegrationTest {
     }
 
     private void cleanupTestData() {
+        jdbcTemplate.update("DELETE FROM claim_scores");
         jdbcTemplate.update("DELETE FROM rulesets");
         jdbcTemplate.update("DELETE FROM audit_events");
 

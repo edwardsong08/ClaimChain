@@ -33,6 +33,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -71,6 +72,7 @@ class AdminClaimReviewIntegrationTest {
     private Long submittedClaimAId;
     private Long submittedClaimBId;
     private Long approvedClaimId;
+    private Long packagedClaimId;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -82,6 +84,7 @@ class AdminClaimReviewIntegrationTest {
         submittedClaimAId = createClaim(providerUser, ClaimStatus.SUBMITTED, "Submitted Client A").getId();
         submittedClaimBId = createClaim(providerUser, ClaimStatus.SUBMITTED, "Submitted Client B").getId();
         approvedClaimId = createClaim(providerUser, ClaimStatus.APPROVED, "Approved Client Existing").getId();
+        packagedClaimId = createClaim(providerUser, ClaimStatus.PACKAGED, "Packaged Client Existing").getId();
 
         adminToken = loginAndGetAccessToken(ADMIN_EMAIL);
         providerToken = loginAndGetAccessToken(PROVIDER_EMAIL);
@@ -118,6 +121,17 @@ class AdminClaimReviewIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andReturn();
         assertApiError(startReviewForbidden, "FORBIDDEN");
+
+        MvcResult overrideFreezeForbidden = mockMvc.perform(
+                        post("/api/admin/claims/{claimId}/override-freeze", submittedClaimAId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + providerToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"reason\":\"not allowed\"}")
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+        assertApiError(overrideFreezeForbidden, "FORBIDDEN");
     }
 
     @Test
@@ -244,6 +258,64 @@ class AdminClaimReviewIntegrationTest {
         assertThat(metadataJson).contains("\"decision\":\"REJECT\"", "\"newStatus\":\"REJECTED\"", "\"missingDocsCount\":2");
     }
 
+    @Test
+    void providerCannotModifyFrozenClaimFields() throws Exception {
+        MvcResult frozenResult = mockMvc.perform(
+                        put("/api/claims/{id}", packagedClaimId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + providerToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "clientName":"Updated Frozen Client",
+                                          "clientContact":"updated@example.com",
+                                          "amount":500.00,
+                                          "dateOfDefault":"2026-02-15",
+                                          "debtType":"COMMERCIAL",
+                                          "clientAddress":"200 Freeze Road",
+                                          "contactHistory":"Updated history",
+                                          "contractFileKey":"updated-key"
+                                        }
+                                        """)
+                )
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+
+        assertApiError(frozenResult, "CLAIM_FROZEN");
+
+        Claim persisted = claimRepository.findById(packagedClaimId).orElseThrow();
+        assertThat(persisted.getClientName()).isEqualTo("Packaged Client Existing");
+    }
+
+    @Test
+    void adminOverrideFreezeEndpoint_returns204_andWritesAuditEvent() throws Exception {
+        mockMvc.perform(
+                        post("/api/admin/claims/{claimId}/override-freeze", packagedClaimId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "reason":"Need compliance-approved correction before rescoring"
+                                        }
+                                        """)
+                )
+                .andExpect(status().isNoContent());
+
+        Integer auditCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM audit_events WHERE action = 'CLAIM_FREEZE_OVERRIDE_REQUESTED' AND entity_type = 'CLAIM' AND entity_id = ?",
+                Integer.class,
+                packagedClaimId
+        );
+        assertThat(auditCount).isEqualTo(1);
+
+        String metadataJson = jdbcTemplate.queryForObject(
+                "SELECT metadata_json FROM audit_events WHERE action = 'CLAIM_FREEZE_OVERRIDE_REQUESTED' AND entity_type = 'CLAIM' AND entity_id = ? ORDER BY id DESC LIMIT 1",
+                String.class,
+                packagedClaimId
+        );
+        assertThat(metadataJson).contains("Need compliance-approved correction before rescoring", "\"status\":\"PACKAGED\"");
+    }
+
     private void startReview(Long claimId) throws Exception {
         mockMvc.perform(
                         post("/api/admin/claims/{claimId}/start-review", claimId)
@@ -307,6 +379,7 @@ class AdminClaimReviewIntegrationTest {
     private void cleanupTestData() {
         jdbcTemplate.update("DELETE FROM document_jobs");
         jdbcTemplate.update("DELETE FROM claim_documents");
+        jdbcTemplate.update("DELETE FROM claim_scores");
         jdbcTemplate.update("DELETE FROM rulesets");
         jdbcTemplate.update("DELETE FROM audit_events");
 

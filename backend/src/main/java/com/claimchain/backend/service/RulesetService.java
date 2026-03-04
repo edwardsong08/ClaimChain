@@ -5,6 +5,8 @@ import com.claimchain.backend.model.Ruleset;
 import com.claimchain.backend.model.RulesetStatus;
 import com.claimchain.backend.model.RulesetType;
 import com.claimchain.backend.model.User;
+import com.claimchain.backend.ruleset.PackagingRulesetValidator;
+import com.claimchain.backend.ruleset.ScoringRulesetValidator;
 import com.claimchain.backend.repository.RulesetRepository;
 import com.claimchain.backend.repository.UserRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -26,17 +28,23 @@ public class RulesetService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
+    private final ScoringRulesetValidator scoringRulesetValidator;
+    private final PackagingRulesetValidator packagingRulesetValidator;
 
     public RulesetService(
             RulesetRepository rulesetRepository,
             UserRepository userRepository,
             AuditService auditService,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ScoringRulesetValidator scoringRulesetValidator,
+            PackagingRulesetValidator packagingRulesetValidator
     ) {
         this.rulesetRepository = rulesetRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
+        this.scoringRulesetValidator = scoringRulesetValidator;
+        this.packagingRulesetValidator = packagingRulesetValidator;
     }
 
     @Transactional(readOnly = true)
@@ -88,6 +96,8 @@ public class RulesetService {
             throw new IllegalArgumentException("Only DRAFT rulesets can be activated.");
         }
 
+        validateForActivation(target);
+
         Ruleset currentActive = rulesetRepository.findFirstByTypeAndStatus(target.getType(), RulesetStatus.ACTIVE)
                 .orElse(null);
         Long priorActiveId = currentActive == null ? null : currentActive.getId();
@@ -112,6 +122,18 @@ public class RulesetService {
         );
 
         return saved;
+    }
+
+    private void validateForActivation(Ruleset ruleset) {
+        if (ruleset.getType() == RulesetType.SCORING) {
+            scoringRulesetValidator.validate(ruleset.getConfigJson());
+            return;
+        }
+        if (ruleset.getType() == RulesetType.PACKAGING) {
+            packagingRulesetValidator.validate(ruleset.getConfigJson());
+            return;
+        }
+        throw new IllegalArgumentException("Unsupported ruleset type: " + ruleset.getType());
     }
 
     private User requireAdmin(String email) {

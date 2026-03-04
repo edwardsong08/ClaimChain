@@ -213,6 +213,7 @@ class DocumentEndpointsIntegrationTest {
                 .andExpect(jsonPath("$[0].filename").value("owner-list-test.png"))
                 .andExpect(jsonPath("$[0].sniffedContentType").value("image/png"))
                 .andExpect(jsonPath("$[0].documentType").value("INVOICE"))
+                .andExpect(jsonPath("$[0].extractionStatus").value("NOT_STARTED"))
                 .andExpect(jsonPath("$[0].status").value("UPLOADED"));
     }
 
