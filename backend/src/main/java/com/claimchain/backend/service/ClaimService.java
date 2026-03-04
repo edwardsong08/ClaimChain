@@ -1,21 +1,26 @@
 package com.claimchain.backend.service;
 
+import com.claimchain.backend.dto.AdminClaimDecisionRequestDTO;
 import com.claimchain.backend.dto.ClaimDocumentResponseDTO;
 import com.claimchain.backend.dto.ClaimRequestDTO;
 import com.claimchain.backend.dto.ClaimResponseDTO;
 import com.claimchain.backend.dto.DocumentUploadResponseDTO;
 import com.claimchain.backend.model.Claim;
 import com.claimchain.backend.model.ClaimDocument;
+import com.claimchain.backend.model.ClaimStatus;
 import com.claimchain.backend.model.DocumentJob;
 import com.claimchain.backend.model.DocumentStatus;
 import com.claimchain.backend.model.JobStatus;
 import com.claimchain.backend.model.JobType;
+import com.claimchain.backend.model.Role;
 import com.claimchain.backend.model.User;
 import com.claimchain.backend.model.VerificationStatus;
 import com.claimchain.backend.repository.ClaimRepository;
 import com.claimchain.backend.repository.ClaimDocumentRepository;
 import com.claimchain.backend.repository.DocumentJobRepository;
 import com.claimchain.backend.repository.UserRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.claimchain.backend.security.AuthorizationService;
 import com.claimchain.backend.security.FilenameSanitizer;
 import com.claimchain.backend.storage.StorageService;
@@ -30,10 +35,15 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -58,6 +68,12 @@ public class ClaimService {
 
     @Autowired
     private StorageService storageService;
+
+    @Autowired
+    private AuditService auditService;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Autowired
     private FilenameSanitizer filenameSanitizer;
@@ -87,6 +103,11 @@ public class ClaimService {
         claim.setAmountOwed(dto.getAmount());
         claim.setDateOfDefault(dto.getDateOfDefault());
         claim.setContractFileKey(dto.getContractFileKey());
+        ClaimStatus initialStatus = ClaimStatus.SUBMITTED;
+        if (!isValidTransition(null, initialStatus)) {
+            throw new IllegalStateException("Invalid initial claim status transition.");
+        }
+        claim.setStatus(initialStatus);
         claim.setUser(user);
         claim.setSubmittedAt(LocalDateTime.now());
 
@@ -100,6 +121,104 @@ public class ClaimService {
 
         List<Claim> claims = claimRepository.findByUser(user);
         return claims.stream().map(this::mapToDTO).collect(Collectors.toList());
+    }
+
+    public List<ClaimResponseDTO> getClaimsByStatusForAdmin(String statusValue) {
+        ClaimStatus status = parseClaimStatus(statusValue);
+        return claimRepository.findByStatusOrderBySubmittedAtDesc(status)
+                .stream()
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
+
+    public ClaimResponseDTO startReview(Long claimId, String adminEmail) {
+        User admin = requireAdminUser(adminEmail);
+        Claim claim = claimRepository.findById(claimId)
+                .orElseThrow(() -> new IllegalArgumentException("Claim not found."));
+
+        ClaimStatus priorStatus = claim.getStatus();
+        ClaimStatus newStatus = ClaimStatus.UNDER_REVIEW;
+
+        if (!isValidTransition(priorStatus, newStatus)) {
+            throw new IllegalArgumentException(
+                    "Invalid claim status transition from "
+                            + (priorStatus == null ? "null" : priorStatus.name())
+                            + " to "
+                            + newStatus.name()
+            );
+        }
+
+        claim.setStatus(newStatus);
+        claim.setReviewStartedByUser(admin);
+        claim.setReviewStartedAt(Instant.now());
+        Claim saved = claimRepository.save(claim);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("priorStatus", priorStatus == null ? null : priorStatus.name());
+        metadata.put("newStatus", newStatus.name());
+
+        auditService.record(
+                admin.getId(),
+                admin.getRole() == null ? null : admin.getRole().name(),
+                "CLAIM_REVIEW_STARTED",
+                "CLAIM",
+                saved.getId(),
+                toJson(metadata)
+        );
+
+        return mapToDTO(saved);
+    }
+
+    public ClaimResponseDTO reviewClaim(Long claimId, AdminClaimDecisionRequestDTO request, String adminEmail) {
+        if (request == null) {
+            throw new IllegalArgumentException("Decision request is required.");
+        }
+
+        User admin = requireAdminUser(adminEmail);
+        Claim claim = claimRepository.findById(claimId)
+                .orElseThrow(() -> new IllegalArgumentException("Claim not found."));
+
+        ClaimStatus priorStatus = claim.getStatus();
+        ClaimStatus newStatus = decisionToStatus(request.getDecision());
+
+        if (priorStatus != ClaimStatus.UNDER_REVIEW) {
+            throw new IllegalArgumentException("Claim must be UNDER_REVIEW before decision.");
+        }
+
+        if (!isValidTransition(priorStatus, newStatus)) {
+            throw new IllegalArgumentException(
+                    "Invalid claim status transition from "
+                            + (priorStatus == null ? "null" : priorStatus.name())
+                            + " to "
+                            + newStatus.name()
+            );
+        }
+
+        List<String> missingDocs = normalizeMissingDocs(request.getMissingDocs());
+        claim.setStatus(newStatus);
+        claim.setReviewNotes(normalizeReviewNotes(request.getNotes()));
+        claim.setMissingDocsJson(missingDocs.isEmpty() ? null : toJson(missingDocs));
+        claim.setReviewedByUser(admin);
+        claim.setReviewedAt(Instant.now());
+
+        Claim saved = claimRepository.save(claim);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("decision", normalizeDecision(request.getDecision()));
+        metadata.put("priorStatus", priorStatus == null ? null : priorStatus.name());
+        metadata.put("newStatus", newStatus.name());
+        metadata.put("missingDocsCount", missingDocs.size());
+
+        auditService.record(
+                admin.getId(),
+                admin.getRole() == null ? null : admin.getRole().name(),
+                "CLAIM_REVIEW_DECISION",
+                "CLAIM",
+                saved.getId(),
+                toJson(metadata)
+        );
+
+        return mapToDTO(saved);
     }
 
     public ClaimResponseDTO getClaimById(Long claimId, String requesterEmail) {
@@ -225,7 +344,7 @@ public class ClaimService {
         dto.setAmount(claim.getAmountOwed());
         dto.setDateOfDefault(claim.getDateOfDefault() != null ? claim.getDateOfDefault().toString() : null);
         dto.setContractFileKey(claim.getContractFileKey());
-        dto.setStatus(claim.getStatus());
+        dto.setStatus(claim.getStatus() != null ? claim.getStatus().name() : null);
         dto.setSubmittedAt(claim.getSubmittedAt().toString());
         dto.setSubmittedBy(claim.getUser().getName());
 
@@ -242,6 +361,98 @@ public class ClaimService {
         dto.setStatus(document.getStatus().name());
         dto.setCreatedAt(document.getCreatedAt());
         return dto;
+    }
+
+    private boolean isValidTransition(ClaimStatus from, ClaimStatus to) {
+        if (to == null) {
+            return false;
+        }
+        if (from == null) {
+            return to == ClaimStatus.SUBMITTED;
+        }
+        if (from == to) {
+            return true;
+        }
+
+        return switch (from) {
+            case SUBMITTED -> to == ClaimStatus.UNDER_REVIEW;
+            case UNDER_REVIEW -> to == ClaimStatus.APPROVED || to == ClaimStatus.REJECTED;
+            case APPROVED -> to == ClaimStatus.PACKAGED;
+            case PACKAGED -> to == ClaimStatus.LISTED;
+            case LISTED -> to == ClaimStatus.SOLD;
+            case REJECTED, SOLD -> false;
+        };
+    }
+
+    private ClaimStatus parseClaimStatus(String value) {
+        String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("status is required.");
+        }
+        try {
+            return ClaimStatus.valueOf(normalized);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Invalid status: " + value);
+        }
+    }
+
+    private ClaimStatus decisionToStatus(String decisionValue) {
+        String normalized = normalizeDecision(decisionValue);
+        return switch (normalized) {
+            case "APPROVE" -> ClaimStatus.APPROVED;
+            case "REJECT" -> ClaimStatus.REJECTED;
+            default -> throw new IllegalArgumentException("decision must be APPROVE or REJECT.");
+        };
+    }
+
+    private String normalizeDecision(String decisionValue) {
+        return decisionValue == null ? "" : decisionValue.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String normalizeReviewNotes(String notes) {
+        if (notes == null) {
+            return null;
+        }
+        String trimmed = notes.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private List<String> normalizeMissingDocs(List<String> missingDocs) {
+        if (missingDocs == null || missingDocs.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<String> normalized = new ArrayList<>();
+        for (String item : missingDocs) {
+            if (item == null) {
+                continue;
+            }
+            String trimmed = item.trim();
+            if (!trimmed.isEmpty()) {
+                normalized.add(trimmed);
+            }
+        }
+        return normalized;
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Failed to serialize JSON payload.", ex);
+        }
+    }
+
+    private User requireAdminUser(String email) {
+        String normalizedEmail = email == null ? null : email.trim().toLowerCase(Locale.ROOT);
+        User admin = normalizedEmail == null ? null : userRepository.findByEmail(normalizedEmail);
+        if (admin == null) {
+            throw new IllegalArgumentException("Admin user not found.");
+        }
+        if (admin.getRole() != Role.ADMIN) {
+            throw new IllegalArgumentException("Admin role required.");
+        }
+        return admin;
     }
 
     private Set<String> parseAllowedTypes() {

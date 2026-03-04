@@ -2,6 +2,7 @@ package com.claimchain.backend.model;
 
 import jakarta.persistence.*;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -36,7 +37,23 @@ public class Claim {
     private String documentUrl; // For public viewing (optional)
     private String contractFileKey; // 🔑 S3 object key for backend
 
-    private String status = "PENDING";
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 50)
+    private ClaimStatus status = ClaimStatus.SUBMITTED;
+    @Column(name = "review_notes", columnDefinition = "TEXT")
+    private String reviewNotes;
+    @Column(name = "missing_docs_json", columnDefinition = "TEXT")
+    private String missingDocsJson;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "review_started_by_user_id")
+    private User reviewStartedByUser;
+    @Column(name = "review_started_at")
+    private Instant reviewStartedAt;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reviewed_by_user_id")
+    private User reviewedByUser;
+    @Column(name = "reviewed_at")
+    private Instant reviewedAt;
     private Integer riskScore; // placeholder for next step
 
     private LocalDateTime submittedAt = LocalDateTime.now();
@@ -96,8 +113,26 @@ public class Claim {
     public String getContractFileKey() { return contractFileKey; }
     public void setContractFileKey(String contractFileKey) { this.contractFileKey = contractFileKey; }
 
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
+    public ClaimStatus getStatus() { return status; }
+    public void setStatus(ClaimStatus status) { this.status = status; }
+
+    public String getReviewNotes() { return reviewNotes; }
+    public void setReviewNotes(String reviewNotes) { this.reviewNotes = reviewNotes; }
+
+    public String getMissingDocsJson() { return missingDocsJson; }
+    public void setMissingDocsJson(String missingDocsJson) { this.missingDocsJson = missingDocsJson; }
+
+    public User getReviewStartedByUser() { return reviewStartedByUser; }
+    public void setReviewStartedByUser(User reviewStartedByUser) { this.reviewStartedByUser = reviewStartedByUser; }
+
+    public Instant getReviewStartedAt() { return reviewStartedAt; }
+    public void setReviewStartedAt(Instant reviewStartedAt) { this.reviewStartedAt = reviewStartedAt; }
+
+    public User getReviewedByUser() { return reviewedByUser; }
+    public void setReviewedByUser(User reviewedByUser) { this.reviewedByUser = reviewedByUser; }
+
+    public Instant getReviewedAt() { return reviewedAt; }
+    public void setReviewedAt(Instant reviewedAt) { this.reviewedAt = reviewedAt; }
 
     public Integer getRiskScore() { return riskScore; }
     public void setRiskScore(Integer riskScore) { this.riskScore = riskScore; }

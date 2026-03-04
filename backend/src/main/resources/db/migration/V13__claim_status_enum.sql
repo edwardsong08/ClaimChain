@@ -1,0 +1,14 @@
+ALTER TABLE claims
+    ADD COLUMN IF NOT EXISTS status VARCHAR(50);
+
+UPDATE claims
+SET status = 'SUBMITTED'
+WHERE status IS NULL
+   OR BTRIM(status) = ''
+   OR UPPER(status) = 'PENDING';
+
+ALTER TABLE claims
+    ALTER COLUMN status SET DEFAULT 'SUBMITTED';
+
+ALTER TABLE claims
+    ALTER COLUMN status SET NOT NULL;
