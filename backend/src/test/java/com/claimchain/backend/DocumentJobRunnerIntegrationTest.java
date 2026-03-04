@@ -42,6 +42,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -93,6 +94,8 @@ class DocumentJobRunnerIntegrationTest {
 
     private String adminToken;
     private String providerToken;
+    private Long claimId;
+    private User providerUser;
     private Long documentId;
     private Long jobId;
     private String sourceText;
@@ -103,10 +106,10 @@ class DocumentJobRunnerIntegrationTest {
         cleanupStorage();
 
         User admin = createUser("Runner Admin", ADMIN_EMAIL, Role.ADMIN, VerificationStatus.APPROVED);
-        User provider = createUser("Runner Provider", PROVIDER_EMAIL, Role.SERVICE_PROVIDER, VerificationStatus.APPROVED);
+        providerUser = createUser("Runner Provider", PROVIDER_EMAIL, Role.SERVICE_PROVIDER, VerificationStatus.APPROVED);
 
         Claim claim = new Claim();
-        claim.setUser(provider);
+        claim.setUser(providerUser);
         claim.setClientName("Runner Client");
         claim.setClientContact("runner-client@example.com");
         claim.setClientAddress("500 Runner Ave");
@@ -115,10 +118,10 @@ class DocumentJobRunnerIntegrationTest {
         claim.setAmountOwed(new BigDecimal("150.00"));
         claim.setDateOfDefault(LocalDate.of(2026, 2, 1));
         claim.setContractFileKey("runner-contract-key");
-        Long claimId = claimRepository.saveAndFlush(claim).getId();
+        claimId = claimRepository.saveAndFlush(claim).getId();
 
         adminToken = loginAndGetAccessToken(admin.getEmail());
-        providerToken = loginAndGetAccessToken(provider.getEmail());
+        providerToken = loginAndGetAccessToken(providerUser.getEmail());
 
         sourceText = "Hello from Tika job runner integration test.";
         documentId = uploadTextDocument(claimId, sourceText);
@@ -138,12 +141,21 @@ class DocumentJobRunnerIntegrationTest {
     void adminRunEndpoint_processesQueuedTikaJob_andPersistsExtractionOutput() throws Exception {
         mockMvc.perform(
                         post("/api/admin/jobs/run-document-jobs")
-                                .param("limit", "5")
+                                .param("limit", "1")
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
                 )
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.processed").value(1));
+
+        mockMvc.perform(
+                        post("/api/admin/jobs/run-document-jobs")
+                                .param("limit", "1")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.processed").value(0));
 
         DocumentJob updatedJob = documentJobRepository.findById(jobId).orElseThrow();
         assertThat(updatedJob.getStatus()).isEqualTo(JobStatus.DONE);
@@ -179,6 +191,68 @@ class DocumentJobRunnerIntegrationTest {
         );
         assertThat(error.getCode()).isEqualTo("FORBIDDEN");
         assertThat(error.getRequestId()).isNotBlank();
+    }
+
+    @Test
+    void failedJob_isRequeuedWithBackoff_andImmediateRunSkipsUntilDue() throws Exception {
+        clearDocumentData();
+        DocumentJob failingJob = createFailingTikaJob(0, 3);
+
+        Instant beforeRun = Instant.now();
+        mockMvc.perform(
+                        post("/api/admin/jobs/run-document-jobs")
+                                .param("limit", "1")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.processed").value(1));
+        Instant afterRun = Instant.now();
+
+        DocumentJob updatedJob = documentJobRepository.findById(failingJob.getId()).orElseThrow();
+        ClaimDocument updatedDocument = claimDocumentRepository.findById(updatedJob.getDocument().getId()).orElseThrow();
+
+        assertThat(updatedJob.getStatus()).isEqualTo(JobStatus.QUEUED);
+        assertThat(updatedJob.getAttemptCount()).isEqualTo(1);
+        assertThat(updatedJob.getLastError()).isNotBlank();
+        assertThat(updatedJob.getNextRunAt()).isNotNull();
+        assertThat(updatedJob.getNextRunAt()).isAfter(beforeRun.plusSeconds(20));
+        assertThat(updatedJob.getNextRunAt()).isBefore(afterRun.plusSeconds(45));
+        assertThat(updatedJob.getFinishedAt()).isNull();
+        assertThat(updatedDocument.getStatus()).isEqualTo(DocumentStatus.QUEUED);
+
+        mockMvc.perform(
+                        post("/api/admin/jobs/run-document-jobs")
+                                .param("limit", "1")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.processed").value(0));
+    }
+
+    @Test
+    void failedJob_atMaxAttempts_becomesTerminalFailed() throws Exception {
+        clearDocumentData();
+        DocumentJob failingJob = createFailingTikaJob(2, 3);
+
+        mockMvc.perform(
+                        post("/api/admin/jobs/run-document-jobs")
+                                .param("limit", "1")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.processed").value(1));
+
+        DocumentJob updatedJob = documentJobRepository.findById(failingJob.getId()).orElseThrow();
+        ClaimDocument updatedDocument = claimDocumentRepository.findById(updatedJob.getDocument().getId()).orElseThrow();
+
+        assertThat(updatedJob.getStatus()).isEqualTo(JobStatus.FAILED);
+        assertThat(updatedJob.getAttemptCount()).isEqualTo(3);
+        assertThat(updatedJob.getFinishedAt()).isNotNull();
+        assertThat(updatedJob.getNextRunAt()).isNull();
+        assertThat(updatedDocument.getStatus()).isEqualTo(DocumentStatus.FAILED);
     }
 
     private Long uploadTextDocument(Long claimId, String textContent) throws Exception {
@@ -227,6 +301,35 @@ class DocumentJobRunnerIntegrationTest {
 
         JsonNode json = objectMapper.readTree(loginResult.getResponse().getContentAsString());
         return json.get("accessToken").asText();
+    }
+
+    private void clearDocumentData() {
+        documentJobRepository.deleteAllInBatch();
+        claimDocumentRepository.deleteAllInBatch();
+    }
+
+    private DocumentJob createFailingTikaJob(int attemptCount, int maxAttempts) {
+        Claim claim = claimRepository.findById(claimId).orElseThrow();
+
+        ClaimDocument document = new ClaimDocument();
+        document.setClaim(claim);
+        document.setUploadedByUser(providerUser);
+        document.setOriginalFilename("missing-input.txt");
+        document.setContentType("text/plain");
+        document.setSniffedContentType("text/plain");
+        document.setSizeBytes(12L);
+        document.setStorageKey("missing/" + UUID.randomUUID() + ".txt");
+        document.setStatus(DocumentStatus.UPLOADED);
+        ClaimDocument savedDocument = claimDocumentRepository.saveAndFlush(document);
+
+        DocumentJob job = new DocumentJob();
+        job.setDocument(savedDocument);
+        job.setJobType(JobType.TIKA_EXTRACT);
+        job.setStatus(JobStatus.QUEUED);
+        job.setAttemptCount(attemptCount);
+        job.setMaxAttempts(maxAttempts);
+        job.setNextRunAt(null);
+        return documentJobRepository.saveAndFlush(job);
     }
 
     private void cleanupTestData() {

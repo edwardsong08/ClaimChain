@@ -164,7 +164,11 @@ class DocumentEndpointsIntegrationTest {
                 .andReturn();
         assertApiError(listResult, "NOT_FOUND");
 
-        Long documentId = uploadAsOwnerAndReturnDocId("upload-owner-for-download.png", minimalPngBytes());
+        Long documentId = uploadAsOwnerAndReturnDocId(
+                "upload-owner-for-download.png",
+                minimalPngBytes(),
+                "upload-owner-for-download.png"
+        );
         MvcResult downloadResult = mockMvc.perform(
                         get("/api/documents/{docId}/download", documentId)
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + otherProviderToken)
@@ -178,18 +182,21 @@ class DocumentEndpointsIntegrationTest {
     @Test
     void ownerProvider_canUploadAndList_andCreatesDocumentAndJobRows() throws Exception {
         byte[] bytes = minimalPngBytes();
-        Long documentId = uploadAsOwnerAndReturnDocId("owner-list-test.png", bytes);
+        Long documentId = uploadAsOwnerAndReturnDocId("../owner-list-test.png", bytes, "owner-list-test.png");
 
         ClaimDocument savedDocument = claimDocumentRepository.findById(documentId).orElseThrow();
         assertThat(savedDocument.getClaim().getId()).isEqualTo(claimId);
         assertThat(savedDocument.getUploadedByUser().getId()).isEqualTo(ownerUserId);
         assertThat(savedDocument.getSniffedContentType()).isEqualTo("image/png");
         assertThat(savedDocument.getSizeBytes()).isEqualTo((long) bytes.length);
+        assertThat(savedDocument.getOriginalFilename()).isEqualTo("owner-list-test.png");
 
         List<DocumentJob> jobs = documentJobRepository.findByDocumentIdOrderByCreatedAtDesc(documentId);
-        assertThat(jobs).hasSize(1);
-        assertThat(jobs.get(0).getJobType()).isEqualTo(JobType.TIKA_EXTRACT);
-        assertThat(jobs.get(0).getStatus()).isEqualTo(JobStatus.QUEUED);
+        assertThat(jobs).hasSize(2);
+        assertThat(jobs).extracting(DocumentJob::getStatus)
+                .containsOnly(JobStatus.QUEUED);
+        assertThat(jobs).extracting(DocumentJob::getJobType)
+                .containsExactlyInAnyOrder(JobType.TIKA_EXTRACT, JobType.MALWARE_SCAN);
 
         mockMvc.perform(
                         get("/api/claims/{id}/documents", claimId)
@@ -206,7 +213,7 @@ class DocumentEndpointsIntegrationTest {
     @Test
     void download_returnsFileBytesAndHeaders() throws Exception {
         byte[] bytes = minimalPngBytes();
-        Long documentId = uploadAsOwnerAndReturnDocId("download-test.png", bytes);
+        Long documentId = uploadAsOwnerAndReturnDocId("../download-test.png", bytes, "download-test.png");
 
         MvcResult downloadResult = mockMvc.perform(
                         get("/api/documents/{docId}/download", documentId)
@@ -246,7 +253,12 @@ class DocumentEndpointsIntegrationTest {
                 "too-large.pdf",
                 MediaType.APPLICATION_PDF_VALUE,
                 oversized
-        );
+        ) {
+            @Override
+            public long getSize() {
+                return 1L;
+            }
+        };
 
         MvcResult oversizedResult = mockMvc.perform(
                         multipart("/api/claims/{id}/documents", claimId)
@@ -262,7 +274,7 @@ class DocumentEndpointsIntegrationTest {
     @Test
     void admin_canListAndDownload_anyClaimDocument() throws Exception {
         byte[] bytes = minimalPngBytes();
-        Long documentId = uploadAsOwnerAndReturnDocId("admin-access.png", bytes);
+        Long documentId = uploadAsOwnerAndReturnDocId("admin-access.png", bytes, "admin-access.png");
 
         mockMvc.perform(
                         get("/api/claims/{id}/documents", claimId)
@@ -339,7 +351,7 @@ class DocumentEndpointsIntegrationTest {
         return json.get("accessToken").asText();
     }
 
-    private Long uploadAsOwnerAndReturnDocId(String filename, byte[] bytes) throws Exception {
+    private Long uploadAsOwnerAndReturnDocId(String filename, byte[] bytes, String expectedPersistedFilename) throws Exception {
         MockMultipartFile file = pngFile(filename, bytes);
         MvcResult uploadResult = mockMvc.perform(
                         multipart("/api/claims/{id}/documents", claimId)
@@ -352,7 +364,7 @@ class DocumentEndpointsIntegrationTest {
 
         JsonNode uploadBody = objectMapper.readTree(uploadResult.getResponse().getContentAsString());
         assertThat(uploadBody.get("status").asText()).isEqualTo("UPLOADED");
-        assertThat(uploadBody.get("filename").asText()).isEqualTo(filename);
+        assertThat(uploadBody.get("filename").asText()).isEqualTo(expectedPersistedFilename);
         assertThat(uploadBody.get("size").asLong()).isEqualTo(bytes.length);
         assertThat(uploadBody.get("sniffedType").asText()).isEqualTo("image/png");
 

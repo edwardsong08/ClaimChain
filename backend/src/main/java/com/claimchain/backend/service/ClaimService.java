@@ -17,6 +17,7 @@ import com.claimchain.backend.repository.ClaimDocumentRepository;
 import com.claimchain.backend.repository.DocumentJobRepository;
 import com.claimchain.backend.repository.UserRepository;
 import com.claimchain.backend.security.AuthorizationService;
+import com.claimchain.backend.security.FilenameSanitizer;
 import com.claimchain.backend.storage.StorageService;
 import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,7 +27,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
@@ -55,6 +58,9 @@ public class ClaimService {
 
     @Autowired
     private StorageService storageService;
+
+    @Autowired
+    private FilenameSanitizer filenameSanitizer;
 
     @Value("${documents.max-bytes:10000000}")
     private long maxDocumentBytes;
@@ -114,24 +120,12 @@ public class ClaimService {
         if (file == null || file.isEmpty()) {
             throw new DocumentValidationException("DOCUMENT_EMPTY", "File must not be empty.");
         }
-        if (file.getSize() > maxDocumentBytes) {
-            throw new DocumentValidationException(
-                    "DOCUMENT_TOO_LARGE",
-                    "File exceeds maximum allowed size."
-            );
-        }
-
-        byte[] bytes;
-        try {
-            bytes = file.getBytes();
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to read uploaded file.", e);
-        }
+        byte[] bytes = readFileBytesWithLimit(file);
         if (bytes.length == 0) {
             throw new DocumentValidationException("DOCUMENT_EMPTY", "File must not be empty.");
         }
 
-        String originalFilename = normalizeOriginalFilename(file.getOriginalFilename());
+        String originalFilename = filenameSanitizer.sanitize(file.getOriginalFilename());
         String declaredContentType = normalizeContentType(file.getContentType());
         String sniffedContentType = normalizeContentType(tika.detect(bytes, originalFilename));
 
@@ -164,6 +158,16 @@ public class ClaimService {
         job.setAttemptCount(0);
         job.setMaxAttempts(3);
         documentJobRepository.save(job);
+
+        if (!"text/plain".equals(sniffedContentType)) {
+            DocumentJob malwareScanJob = new DocumentJob();
+            malwareScanJob.setDocument(savedDocument);
+            malwareScanJob.setJobType(JobType.MALWARE_SCAN);
+            malwareScanJob.setStatus(JobStatus.QUEUED);
+            malwareScanJob.setAttemptCount(0);
+            malwareScanJob.setMaxAttempts(3);
+            documentJobRepository.save(malwareScanJob);
+        }
 
         DocumentUploadResponseDTO response = new DocumentUploadResponseDTO();
         response.setDocId(savedDocument.getId());
@@ -203,7 +207,7 @@ public class ClaimService {
 
         return new DocumentDownloadDescriptor(
                 document.getStorageKey(),
-                document.getOriginalFilename(),
+                filenameSanitizer.sanitize(document.getOriginalFilename()),
                 normalizeContentType(contentType),
                 document.getSizeBytes()
         );
@@ -254,11 +258,37 @@ public class ClaimService {
         return value.trim().toLowerCase(Locale.ROOT);
     }
 
-    private String normalizeOriginalFilename(String filename) {
-        if (filename == null || filename.isBlank()) {
-            return "upload.bin";
+    private byte[] readFileBytesWithLimit(MultipartFile file) {
+        long maxPlusOne = maxDocumentBytes + 1;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        try (InputStream input = file.getInputStream()) {
+            byte[] buffer = new byte[8192];
+            long total = 0L;
+
+            while (total < maxPlusOne) {
+                int nextReadLength = (int) Math.min(buffer.length, maxPlusOne - total);
+                int read = input.read(buffer, 0, nextReadLength);
+                if (read == -1) {
+                    break;
+                }
+
+                output.write(buffer, 0, read);
+                total += read;
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read uploaded file.", e);
         }
-        return filename.trim();
+
+        byte[] bytes = output.toByteArray();
+        if (bytes.length > maxDocumentBytes) {
+            throw new DocumentValidationException(
+                    "DOCUMENT_TOO_LARGE",
+                    "File exceeds maximum allowed size."
+            );
+        }
+
+        return bytes;
     }
 
     public static class ClaimNotFoundException extends RuntimeException {
