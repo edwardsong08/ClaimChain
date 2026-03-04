@@ -4,6 +4,7 @@ import com.claimchain.backend.dto.ApiErrorResponse;
 import com.claimchain.backend.model.Claim;
 import com.claimchain.backend.model.ClaimDocument;
 import com.claimchain.backend.model.DocumentJob;
+import com.claimchain.backend.model.DocumentType;
 import com.claimchain.backend.model.JobStatus;
 import com.claimchain.backend.model.JobType;
 import com.claimchain.backend.model.Role;
@@ -124,6 +125,7 @@ class DocumentEndpointsIntegrationTest {
         MvcResult noTokenResult = mockMvc.perform(
                         multipart("/api/claims/{id}/documents", claimId)
                                 .file(file)
+                                .param("documentType", "INVOICE")
                 )
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -133,6 +135,7 @@ class DocumentEndpointsIntegrationTest {
         MvcResult collectionResult = mockMvc.perform(
                         multipart("/api/claims/{id}/documents", claimId)
                                 .file(file)
+                                .param("documentType", "INVOICE")
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + collectionToken)
                 )
                 .andExpect(status().isForbidden())
@@ -148,6 +151,7 @@ class DocumentEndpointsIntegrationTest {
         MvcResult uploadResult = mockMvc.perform(
                         multipart("/api/claims/{id}/documents", claimId)
                                 .file(file)
+                                .param("documentType", "INVOICE")
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + otherProviderToken)
                 )
                 .andExpect(status().isNotFound())
@@ -190,6 +194,7 @@ class DocumentEndpointsIntegrationTest {
         assertThat(savedDocument.getSniffedContentType()).isEqualTo("image/png");
         assertThat(savedDocument.getSizeBytes()).isEqualTo((long) bytes.length);
         assertThat(savedDocument.getOriginalFilename()).isEqualTo("owner-list-test.png");
+        assertThat(savedDocument.getDocumentType()).isEqualTo(DocumentType.INVOICE);
 
         List<DocumentJob> jobs = documentJobRepository.findByDocumentIdOrderByCreatedAtDesc(documentId);
         assertThat(jobs).hasSize(2);
@@ -207,6 +212,7 @@ class DocumentEndpointsIntegrationTest {
                 .andExpect(jsonPath("$[0].id").value(documentId.intValue()))
                 .andExpect(jsonPath("$[0].filename").value("owner-list-test.png"))
                 .andExpect(jsonPath("$[0].sniffedContentType").value("image/png"))
+                .andExpect(jsonPath("$[0].documentType").value("INVOICE"))
                 .andExpect(jsonPath("$[0].status").value("UPLOADED"));
     }
 
@@ -240,6 +246,7 @@ class DocumentEndpointsIntegrationTest {
         MvcResult disallowedResult = mockMvc.perform(
                         multipart("/api/claims/{id}/documents", claimId)
                                 .file(disallowedFile)
+                                .param("documentType", "INVOICE")
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken)
                 )
                 .andExpect(status().isBadRequest())
@@ -263,12 +270,39 @@ class DocumentEndpointsIntegrationTest {
         MvcResult oversizedResult = mockMvc.perform(
                         multipart("/api/claims/{id}/documents", claimId)
                                 .file(oversizedFile)
+                                .param("documentType", "INVOICE")
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken)
                 )
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andReturn();
         assertApiError(oversizedResult, "DOCUMENT_TOO_LARGE");
+    }
+
+    @Test
+    void upload_rejectsMissingAndInvalidDocumentType() throws Exception {
+        MockMultipartFile file = pngFile("typed-upload-test.png", minimalPngBytes());
+
+        MvcResult missingTypeResult = mockMvc.perform(
+                        multipart("/api/claims/{id}/documents", claimId)
+                                .file(file)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+        assertApiError(missingTypeResult, "DOCUMENT_TYPE_REQUIRED");
+
+        MvcResult invalidTypeResult = mockMvc.perform(
+                        multipart("/api/claims/{id}/documents", claimId)
+                                .file(file)
+                                .param("documentType", "NOT_A_TYPE")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+        assertApiError(invalidTypeResult, "DOCUMENT_TYPE_INVALID");
     }
 
     @Test
@@ -356,6 +390,7 @@ class DocumentEndpointsIntegrationTest {
         MvcResult uploadResult = mockMvc.perform(
                         multipart("/api/claims/{id}/documents", claimId)
                                 .file(file)
+                                .param("documentType", "INVOICE")
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken)
                 )
                 .andExpect(status().isCreated())

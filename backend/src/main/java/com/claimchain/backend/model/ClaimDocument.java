@@ -39,6 +39,10 @@ public class ClaimDocument {
     @Column(name = "status", nullable = false, length = 32)
     private DocumentStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "document_type", nullable = false, length = 50)
+    private DocumentType documentType = DocumentType.OTHER;
+
     @Column(name = "extracted_storage_key", length = 512)
     private String extractedStorageKey;
 
@@ -136,6 +140,14 @@ public class ClaimDocument {
 
     public void setStatus(DocumentStatus status) {
         this.status = status;
+    }
+
+    public DocumentType getDocumentType() {
+        return documentType;
+    }
+
+    public void setDocumentType(DocumentType documentType) {
+        this.documentType = documentType;
     }
 
     public String getExtractedStorageKey() {
