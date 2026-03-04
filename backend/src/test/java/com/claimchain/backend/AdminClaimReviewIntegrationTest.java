@@ -266,6 +266,11 @@ class AdminClaimReviewIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
+                                          "debtorAddress":"200 Freeze Road",
+                                          "debtorType":"BUSINESS",
+                                          "jurisdictionState":"tx",
+                                          "claimType":"SERVICES",
+                                          "disputeStatus":"POSSIBLE",
                                           "clientName":"Updated Frozen Client",
                                           "clientContact":"updated@example.com",
                                           "amount":500.00,

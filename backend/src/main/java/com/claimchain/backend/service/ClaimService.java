@@ -7,11 +7,14 @@ import com.claimchain.backend.dto.ClaimRequestDTO;
 import com.claimchain.backend.dto.ClaimResponseDTO;
 import com.claimchain.backend.dto.DocumentUploadResponseDTO;
 import com.claimchain.backend.model.Claim;
+import com.claimchain.backend.model.ClaimType;
 import com.claimchain.backend.model.ClaimDocument;
 import com.claimchain.backend.model.ClaimStatus;
+import com.claimchain.backend.model.DebtorType;
 import com.claimchain.backend.model.DocumentJob;
 import com.claimchain.backend.model.DocumentStatus;
 import com.claimchain.backend.model.DocumentType;
+import com.claimchain.backend.model.DisputeStatus;
 import com.claimchain.backend.model.JobStatus;
 import com.claimchain.backend.model.JobType;
 import com.claimchain.backend.model.Role;
@@ -37,6 +40,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -97,14 +101,7 @@ public class ClaimService {
         }
 
         Claim claim = new Claim();
-        claim.setClientName(dto.getClientName());
-        claim.setClientContact(dto.getClientContact());
-        claim.setClientAddress(dto.getClientAddress());
-        claim.setDebtType(dto.getDebtType());
-        claim.setContactHistory(dto.getContactHistory());
-        claim.setAmountOwed(dto.getAmount());
-        claim.setDateOfDefault(dto.getDateOfDefault());
-        claim.setContractFileKey(dto.getContractFileKey());
+        applyClaimRequestToClaim(claim, dto);
         ClaimStatus initialStatus = ClaimStatus.SUBMITTED;
         if (!isValidTransition(null, initialStatus)) {
             throw new IllegalStateException("Invalid initial claim status transition.");
@@ -140,14 +137,7 @@ public class ClaimService {
         authorizationService.requireClaimAccess(claim, requester);
         enforceClaimNotFrozenForScoringChanges(claim);
 
-        claim.setClientName(dto.getClientName());
-        claim.setClientContact(dto.getClientContact());
-        claim.setClientAddress(dto.getClientAddress());
-        claim.setDebtType(dto.getDebtType());
-        claim.setContactHistory(dto.getContactHistory());
-        claim.setAmountOwed(dto.getAmount());
-        claim.setDateOfDefault(dto.getDateOfDefault());
-        claim.setContractFileKey(dto.getContractFileKey());
+        applyClaimRequestToClaim(claim, dto);
 
         Claim saved = claimRepository.save(claim);
         return mapToDTO(saved);
@@ -386,13 +376,26 @@ public class ClaimService {
         ClaimResponseDTO dto = new ClaimResponseDTO();
 
         dto.setId(claim.getId());
+        dto.setDebtorName(claim.getDebtorName());
+        dto.setDebtorEmail(claim.getDebtorEmail());
+        dto.setDebtorPhone(claim.getDebtorPhone());
+        dto.setDebtorAddress(claim.getDebtorAddress());
+        dto.setDebtorType(claim.getDebtorType() == null ? null : claim.getDebtorType().name());
+        dto.setJurisdictionState(claim.getJurisdictionState());
+        dto.setClaimType(claim.getClaimType() == null ? null : claim.getClaimType().name());
+        dto.setDisputeStatus(claim.getDisputeStatus() == null ? null : claim.getDisputeStatus().name());
         dto.setClientName(claim.getClientName());
         dto.setClientContact(claim.getClientContact());
         dto.setClientAddress(claim.getClientAddress());
         dto.setDebtType(claim.getDebtType());
         dto.setContactHistory(claim.getContactHistory());
-        dto.setAmount(claim.getAmountOwed());
+        BigDecimal mappedCurrentAmount = claim.getCurrentAmount() != null ? claim.getCurrentAmount() : claim.getAmountOwed();
+        BigDecimal mappedOriginalAmount = claim.getOriginalAmount() != null ? claim.getOriginalAmount() : mappedCurrentAmount;
+        dto.setOriginalAmount(mappedOriginalAmount);
+        dto.setCurrentAmount(mappedCurrentAmount);
+        dto.setAmount(mappedCurrentAmount);
         dto.setDateOfDefault(claim.getDateOfDefault() != null ? claim.getDateOfDefault().toString() : null);
+        dto.setLastPaymentDate(claim.getLastPaymentDate() != null ? claim.getLastPaymentDate().toString() : null);
         dto.setContractFileKey(claim.getContractFileKey());
         dto.setStatus(claim.getStatus() != null ? claim.getStatus().name() : null);
         dto.setSubmittedAt(claim.getSubmittedAt().toString());
@@ -414,6 +417,34 @@ public class ClaimService {
         dto.setExtractedCharCount(document.getExtractedCharCount());
         dto.setCreatedAt(document.getCreatedAt());
         return dto;
+    }
+
+    private void applyClaimRequestToClaim(Claim claim, ClaimRequestDTO dto) {
+        BigDecimal currentAmount = dto.getCurrentAmount();
+        BigDecimal originalAmount = dto.getOriginalAmount() == null ? currentAmount : dto.getOriginalAmount();
+
+        claim.setDebtorName(dto.getDebtorName());
+        claim.setDebtorEmail(dto.getDebtorEmail());
+        claim.setDebtorPhone(dto.getDebtorPhone());
+        claim.setDebtorAddress(dto.getDebtorAddress());
+        claim.setDebtorType(parseDebtorType(dto.getDebtorType()));
+        claim.setJurisdictionState(normalizeJurisdiction(dto.getJurisdictionState()));
+        claim.setClaimType(parseClaimType(dto.getClaimType()));
+        claim.setDisputeStatus(parseDisputeStatus(dto.getDisputeStatus()));
+
+        claim.setClientName(dto.getClientName());
+        claim.setClientContact(dto.getClientContact());
+        claim.setClientAddress(dto.getClientAddress());
+        claim.setDebtType(dto.getDebtType());
+        claim.setContactHistory(dto.getContactHistory());
+        claim.setDateOfService(dto.getDateOfService());
+        claim.setDateOfDefault(dto.getDateOfDefault());
+        claim.setLastPaymentDate(dto.getLastPaymentDate());
+        claim.setContractFileKey(dto.getContractFileKey());
+
+        claim.setCurrentAmount(currentAmount);
+        claim.setOriginalAmount(originalAmount);
+        claim.setAmountOwed(currentAmount);
     }
 
     private boolean isValidTransition(ClaimStatus from, ClaimStatus to) {
@@ -454,6 +485,50 @@ public class ClaimService {
         } catch (IllegalArgumentException ex) {
             throw new IllegalArgumentException("Invalid status: " + value);
         }
+    }
+
+    private DebtorType parseDebtorType(String value) {
+        String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("debtorType is required.");
+        }
+        try {
+            return DebtorType.valueOf(normalized);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Invalid debtorType: " + value);
+        }
+    }
+
+    private ClaimType parseClaimType(String value) {
+        String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("claimType is required.");
+        }
+        try {
+            return ClaimType.valueOf(normalized);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Invalid claimType: " + value);
+        }
+    }
+
+    private DisputeStatus parseDisputeStatus(String value) {
+        String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("disputeStatus is required.");
+        }
+        try {
+            return DisputeStatus.valueOf(normalized);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Invalid disputeStatus: " + value);
+        }
+    }
+
+    private String normalizeJurisdiction(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("jurisdictionState is required.");
+        }
+        return normalized.toUpperCase(Locale.ROOT);
     }
 
     private DocumentType parseDocumentType(String value) {

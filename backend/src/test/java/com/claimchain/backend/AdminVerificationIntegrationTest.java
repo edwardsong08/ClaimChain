@@ -118,6 +118,11 @@ class AdminVerificationIntegrationTest {
 
         String claimPayload = """
                 {
+                  "debtorAddress":"77 Underwriting Blvd",
+                  "debtorType":"BUSINESS",
+                  "jurisdictionState":"ca",
+                  "claimType":"INVOICE",
+                  "disputeStatus":"NONE",
                   "clientName":"Client A",
                   "clientContact":"client@example.com",
                   "amount":123.45,
