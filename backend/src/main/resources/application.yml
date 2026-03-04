@@ -16,3 +16,11 @@ security:
     expiration-millis: ${JWT_EXPIRATION_MILLIS:86400000}
     refresh-expiration-millis: ${JWT_REFRESH_EXPIRATION_MILLIS:2592000000}
     password-reset-expiration-millis: ${JWT_PASSWORD_RESET_EXPIRATION_MILLIS:900000}
+
+documents:
+  max-bytes: ${DOCUMENTS_MAX_BYTES:10000000}
+  allowed-types: ${DOCUMENTS_ALLOWED_TYPES:application/pdf,image/png,image/jpeg}
+
+storage:
+  local:
+    base-dir: ${STORAGE_LOCAL_BASE_DIR:storage/dev}
