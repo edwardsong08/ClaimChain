@@ -56,6 +56,7 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/buyer/**").hasRole("COLLECTION_AGENCY")
                 .anyRequest().authenticated() // 🔒 protect all other routes
             )
             .exceptionHandling(ex -> ex
