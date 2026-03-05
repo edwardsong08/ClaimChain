@@ -110,7 +110,10 @@ public class GlobalExceptionHandler {
             PackageService.PackageConflictException ex,
             HttpServletRequest request
     ) {
-        return build(HttpStatus.CONFLICT, ex.getCode(), ex.getMessage(), List.of(ex.getMessage()), request);
+        List<String> details = ex.getDetails() == null || ex.getDetails().isEmpty()
+                ? List.of(ex.getMessage())
+                : ex.getDetails();
+        return build(HttpStatus.CONFLICT, ex.getCode(), ex.getMessage(), details, request);
     }
 
     @ExceptionHandler({PackageService.PackageNotFoundException.class, PackageService.ClaimNotFoundException.class})

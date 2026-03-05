@@ -7,6 +7,8 @@ import com.claimchain.backend.dto.ApiErrorResponse;
 import com.claimchain.backend.dto.ClaimFreezeOverrideRequestDTO;
 import com.claimchain.backend.dto.ClaimScoreResponseDTO;
 import com.claimchain.backend.dto.ClaimResponseDTO;
+import com.claimchain.backend.dto.PackageBuildRequestDTO;
+import com.claimchain.backend.dto.PackageBuildResponseDTO;
 import com.claimchain.backend.dto.PackageCreateRequestDTO;
 import com.claimchain.backend.dto.PackageDetailResponseDTO;
 import com.claimchain.backend.dto.PackageResponseDTO;
@@ -198,6 +200,25 @@ public class AdminController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/packages/build")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<PackageBuildResponseDTO> buildPackage(
+            @Valid @RequestBody(required = false) PackageBuildRequestDTO request,
+            Principal principal
+    ) {
+        Long adminUserId = requirePrincipalUserId(principal);
+        boolean dryRun = request != null && Boolean.TRUE.equals(request.getDryRun());
+        String notes = request == null ? null : request.getNotes();
+
+        PackageService.BuildPackageResult result = packageService.buildOnePackage(adminUserId, notes, dryRun);
+        PackageBuildResponseDTO response = toPackageBuildResponse(result);
+
+        if (dryRun) {
+            return ResponseEntity.ok(response);
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
     @ExceptionHandler(ClaimService.ClaimFrozenException.class)
     public ResponseEntity<ApiErrorResponse> handleClaimFrozen(
             ClaimService.ClaimFrozenException ex,
@@ -258,6 +279,21 @@ public class AdminController {
                 .filter(Objects::nonNull)
                 .toList();
         dto.setClaimIds(claimIds);
+        return dto;
+    }
+
+    private PackageBuildResponseDTO toPackageBuildResponse(PackageService.BuildPackageResult result) {
+        PackageBuildResponseDTO dto = new PackageBuildResponseDTO();
+        dto.setPackageId(result.getPackageId());
+        dto.setDryRun(result.isDryRun());
+        dto.setBuildable(result.isBuildable());
+        dto.setStatus(result.getStatus());
+        dto.setRulesetId(result.getRulesetId());
+        dto.setRulesetVersion(result.getRulesetVersion());
+        dto.setTotalClaims(result.getTotalClaims());
+        dto.setTotalFaceValue(result.getTotalFaceValue());
+        dto.setClaimIds(result.getClaimIds());
+        dto.setFailureReasons(result.getFailureReasons());
         return dto;
     }
 
