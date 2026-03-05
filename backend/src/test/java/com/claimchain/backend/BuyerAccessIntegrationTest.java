@@ -11,7 +11,6 @@ import com.claimchain.backend.model.DisputeStatus;
 import com.claimchain.backend.model.DocumentStatus;
 import com.claimchain.backend.model.DocumentType;
 import com.claimchain.backend.model.ExtractionStatus;
-import com.claimchain.backend.model.Package;
 import com.claimchain.backend.model.PackageStatus;
 import com.claimchain.backend.model.Role;
 import com.claimchain.backend.model.Ruleset;
@@ -22,7 +21,6 @@ import com.claimchain.backend.model.VerificationStatus;
 import com.claimchain.backend.repository.ClaimDocumentRepository;
 import com.claimchain.backend.repository.ClaimRepository;
 import com.claimchain.backend.repository.ClaimScoreRepository;
-import com.claimchain.backend.repository.PackageRepository;
 import com.claimchain.backend.repository.RulesetRepository;
 import com.claimchain.backend.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -85,9 +83,6 @@ class BuyerAccessIntegrationTest {
 
     @Autowired
     private ClaimDocumentRepository claimDocumentRepository;
-
-    @Autowired
-    private PackageRepository packageRepository;
 
     @Autowired
     private RulesetRepository rulesetRepository;
@@ -160,9 +155,11 @@ class BuyerAccessIntegrationTest {
                 )
                 .andExpect(status().isNoContent());
 
-        Package listedPackage = packageRepository.findById(listedPackageId).orElseThrow();
-        listedPackage.setStatus(PackageStatus.LISTED);
-        packageRepository.saveAndFlush(listedPackage);
+        mockMvc.perform(
+                        post("/api/admin/packages/{id}/list", listedPackageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isNoContent());
 
         BuildResponse secondBuild = buildOnePackageAsAdmin();
         readyPackageId = secondBuild.packageId;
@@ -221,6 +218,85 @@ class BuyerAccessIntegrationTest {
                 .andReturn();
 
         assertApiError(result, "NOT_FOUND");
+    }
+
+    @Test
+    void adminCanListAndUnlistReadyPackage_andBuyerVisibilityTracksStatus() throws Exception {
+        mockMvc.perform(
+                        post("/api/admin/packages/{id}/anonymized-views/generate", readyPackageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(
+                        post("/api/admin/packages/{id}/list", readyPackageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isNoContent());
+
+        MvcResult buyerListAfterList = mockMvc.perform(
+                        get("/api/buyer/packages")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + buyerToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+
+        JsonNode buyerListBody = objectMapper.readTree(buyerListAfterList.getResponse().getContentAsString());
+        List<Long> visiblePackageIds = new ArrayList<>();
+        buyerListBody.forEach(node -> visiblePackageIds.add(node.get("id").asLong()));
+        assertThat(visiblePackageIds).contains(readyPackageId);
+
+        mockMvc.perform(
+                        get("/api/buyer/packages/{id}", readyPackageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + buyerToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(readyPackageId))
+                .andExpect(jsonPath("$.claims").isArray());
+
+        mockMvc.perform(
+                        post("/api/admin/packages/{id}/unlist", readyPackageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isNoContent());
+
+        MvcResult buyerAfterUnlist = mockMvc.perform(
+                        get("/api/buyer/packages/{id}", readyPackageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + buyerToken)
+                )
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+        assertApiError(buyerAfterUnlist, "NOT_FOUND");
+    }
+
+    @Test
+    void invalidListingTransitionsReturn409PackageStatusInvalid() throws Exception {
+        Long draftPackageId = createDraftPackageAsAdmin();
+
+        MvcResult listDraft = mockMvc.perform(
+                        post("/api/admin/packages/{id}/list", draftPackageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+        ApiErrorResponse listDraftError = readApiError(listDraft);
+        assertThat(listDraftError.getCode()).isEqualTo("PACKAGE_STATUS_INVALID");
+        assertThat(listDraftError.getDetails()).contains("currentStatus=DRAFT");
+
+        MvcResult unlistReady = mockMvc.perform(
+                        post("/api/admin/packages/{id}/unlist", readyPackageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+        ApiErrorResponse unlistReadyError = readApiError(unlistReady);
+        assertThat(unlistReadyError.getCode()).isEqualTo("PACKAGE_STATUS_INVALID");
+        assertThat(unlistReadyError.getDetails()).contains("currentStatus=READY");
     }
 
     @Test
@@ -290,6 +366,22 @@ class BuyerAccessIntegrationTest {
         List<Long> claimIds = new ArrayList<>();
         body.get("claimIds").forEach(node -> claimIds.add(node.asLong()));
         return new BuildResponse(packageId, claimIds);
+    }
+
+    private Long createDraftPackageAsAdmin() throws Exception {
+        MvcResult result = mockMvc.perform(
+                        post("/api/admin/packages")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"notes\":\"draft-for-transition-test\"}")
+                )
+                .andExpect(status().isCreated())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(PackageStatus.DRAFT.name()))
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        return body.get("id").asLong();
     }
 
     private List<ClaimDocument> addSuccessfulRequiredDocuments(Claim claim) {
@@ -439,9 +531,13 @@ class BuyerAccessIntegrationTest {
     }
 
     private void assertApiError(MvcResult result, String expectedCode) throws Exception {
-        ApiErrorResponse error = objectMapper.readValue(result.getResponse().getContentAsString(), ApiErrorResponse.class);
+        ApiErrorResponse error = readApiError(result);
         assertThat(error.getCode()).isEqualTo(expectedCode);
         assertThat(error.getRequestId()).isNotBlank();
+    }
+
+    private ApiErrorResponse readApiError(MvcResult result) throws Exception {
+        return objectMapper.readValue(result.getResponse().getContentAsString(), ApiErrorResponse.class);
     }
 
     private void cleanupTestData() {

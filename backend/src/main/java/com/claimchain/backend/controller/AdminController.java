@@ -206,6 +206,28 @@ public class AdminController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/packages/{id}/list")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> listPackage(
+            @PathVariable Long id,
+            Principal principal
+    ) {
+        Long adminUserId = requirePrincipalUserId(principal);
+        packageService.listPackage(id, adminUserId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/packages/{id}/unlist")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> unlistPackage(
+            @PathVariable Long id,
+            Principal principal
+    ) {
+        Long adminUserId = requirePrincipalUserId(principal);
+        packageService.unlistPackage(id, adminUserId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/packages/build")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PackageBuildResponseDTO> buildPackage(

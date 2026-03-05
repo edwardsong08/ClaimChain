@@ -171,6 +171,28 @@ public class PackageService {
     }
 
     @Transactional
+    public void listPackage(Long packageId, Long adminUserId) {
+        transitionPackageStatus(
+                packageId,
+                adminUserId,
+                PackageStatus.READY,
+                PackageStatus.LISTED,
+                "PACKAGE_LISTED"
+        );
+    }
+
+    @Transactional
+    public void unlistPackage(Long packageId, Long adminUserId) {
+        transitionPackageStatus(
+                packageId,
+                adminUserId,
+                PackageStatus.LISTED,
+                PackageStatus.READY,
+                "PACKAGE_UNLISTED"
+        );
+    }
+
+    @Transactional
     public BuildPackageResult buildOnePackage(Long adminUserId, String notesOptional, boolean dryRun) {
         User admin = requireAdminById(adminUserId);
         Ruleset activePackagingRuleset = requireActivePackagingRuleset();
@@ -291,6 +313,52 @@ public class PackageService {
             throw new PackageValidationException("ADMIN_REQUIRED", "Admin role required.");
         }
         return admin;
+    }
+
+    private void transitionPackageStatus(
+            Long packageId,
+            Long adminUserId,
+            PackageStatus expectedFrom,
+            PackageStatus toStatus,
+            String auditAction
+    ) {
+        User admin = requireAdminById(adminUserId);
+        if (packageId == null) {
+            throw new PackageValidationException("PACKAGE_ID_REQUIRED", "Package id is required.");
+        }
+
+        Package packageEntity = packageRepository.findById(packageId)
+                .orElseThrow(() -> new PackageNotFoundException("Package not found."));
+
+        PackageStatus currentStatus = packageEntity.getStatus();
+        if (currentStatus != expectedFrom) {
+            throw new PackageConflictException(
+                    "PACKAGE_STATUS_INVALID",
+                    "Package status transition is invalid.",
+                    List.of(
+                            "currentStatus=" + (currentStatus == null ? "UNKNOWN" : currentStatus.name()),
+                            "requiredStatus=" + expectedFrom.name(),
+                            "targetStatus=" + toStatus.name()
+                    )
+            );
+        }
+
+        packageEntity.setStatus(toStatus);
+        packageRepository.save(packageEntity);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("packageId", packageEntity.getId());
+        metadata.put("fromStatus", currentStatus == null ? null : currentStatus.name());
+        metadata.put("toStatus", toStatus.name());
+
+        auditService.record(
+                admin.getId(),
+                admin.getRole() == null ? null : admin.getRole().name(),
+                auditAction,
+                "PACKAGE",
+                packageEntity.getId(),
+                toJson(metadata)
+        );
     }
 
     private BigDecimal resolveClaimFaceValue(Claim claim) {
