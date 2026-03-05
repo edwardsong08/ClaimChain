@@ -1,28 +1,44 @@
 package com.claimchain.backend.controller;
 
 import com.claimchain.backend.dto.AnonymizedClaimViewResponseDTO;
+import com.claimchain.backend.dto.BuyerCheckoutResponseDTO;
 import com.claimchain.backend.dto.BuyerPackageDetailResponseDTO;
 import com.claimchain.backend.dto.BuyerPackageSummaryResponseDTO;
 import com.claimchain.backend.model.AnonymizedClaimView;
 import com.claimchain.backend.model.Package;
+import com.claimchain.backend.model.User;
+import com.claimchain.backend.repository.UserRepository;
 import com.claimchain.backend.service.BuyerPackageService;
+import com.claimchain.backend.service.PurchaseService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.security.Principal;
 import java.util.List;
+import java.util.Locale;
 
 @RestController
 @RequestMapping("/api/buyer")
 public class BuyerController {
 
     private final BuyerPackageService buyerPackageService;
+    private final PurchaseService purchaseService;
+    private final UserRepository userRepository;
 
-    public BuyerController(BuyerPackageService buyerPackageService) {
+    public BuyerController(
+            BuyerPackageService buyerPackageService,
+            PurchaseService purchaseService,
+            UserRepository userRepository
+    ) {
         this.buyerPackageService = buyerPackageService;
+        this.purchaseService = purchaseService;
+        this.userRepository = userRepository;
     }
 
     @GetMapping("/packages")
@@ -40,6 +56,22 @@ public class BuyerController {
     public ResponseEntity<BuyerPackageDetailResponseDTO> getListedPackage(@PathVariable Long id) {
         BuyerPackageService.ListedPackageDetail detail = buyerPackageService.getListedPackageWithAnonymizedViews(id);
         BuyerPackageDetailResponseDTO response = toBuyerPackageDetail(detail);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/packages/{id}/checkout")
+    @PreAuthorize("hasRole('COLLECTION_AGENCY')")
+    public ResponseEntity<BuyerCheckoutResponseDTO> checkoutPackage(
+            @PathVariable Long id,
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
+            Principal principal
+    ) {
+        Long buyerUserId = requirePrincipalUserId(principal);
+        PurchaseService.CheckoutResult result = purchaseService.createCheckout(id, buyerUserId, idempotencyKey);
+        BuyerCheckoutResponseDTO response = new BuyerCheckoutResponseDTO();
+        response.setPurchaseId(result.getPurchaseId());
+        response.setCheckoutSessionId(result.getCheckoutSessionId());
+        response.setCheckoutUrl(result.getCheckoutUrl());
         return ResponseEntity.ok(response);
     }
 
@@ -81,5 +113,16 @@ public class BuyerController {
         dto.setExtractionSuccessRate(view.getExtractionSuccessRate());
         dto.setDocTypesPresent(view.getDocTypesPresent());
         return dto;
+    }
+
+    private Long requirePrincipalUserId(Principal principal) {
+        String normalizedEmail = principal == null || principal.getName() == null
+                ? null
+                : principal.getName().trim().toLowerCase(Locale.ROOT);
+        User user = normalizedEmail == null ? null : userRepository.findByEmail(normalizedEmail);
+        if (user == null) {
+            throw new IllegalArgumentException("Buyer user not found.");
+        }
+        return user.getId();
     }
 }
