@@ -72,3 +72,12 @@ docker-compose.override.yml
 # OS
 Thumbs.db
 ehthumbs.db
+
+# local dev document storage artifacts
+backend/storage/dev/
+backend/storage/dev/**
+
+# extracted text artifacts
+*.tika.txt
+/storage/dev/
+/storage/dev/**
