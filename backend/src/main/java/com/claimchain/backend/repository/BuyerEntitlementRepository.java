@@ -6,4 +6,5 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface BuyerEntitlementRepository extends JpaRepository<BuyerEntitlement, Long> {
+    boolean existsByPackageEntityIdAndBuyerUserId(Long packageId, Long buyerUserId);
 }

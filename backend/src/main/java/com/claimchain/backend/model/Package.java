@@ -52,6 +52,12 @@ public class Package {
     @Column(name = "total_face_value", nullable = false, precision = 19, scale = 2)
     private BigDecimal totalFaceValue = BigDecimal.ZERO;
 
+    @Column(name = "price_cents")
+    private Long priceCents;
+
+    @Column(name = "currency", length = 3)
+    private String currency = "usd";
+
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 
@@ -71,6 +77,9 @@ public class Package {
         }
         if (totalFaceValue == null) {
             totalFaceValue = BigDecimal.ZERO;
+        }
+        if (currency == null || currency.trim().isEmpty()) {
+            currency = "usd";
         }
     }
 
@@ -140,6 +149,22 @@ public class Package {
 
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public Long getPriceCents() {
+        return priceCents;
+    }
+
+    public void setPriceCents(Long priceCents) {
+        this.priceCents = priceCents;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 
     public Set<PackageClaim> getPackageClaims() {
