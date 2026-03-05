@@ -50,6 +50,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -92,6 +93,7 @@ class BuyerAccessIntegrationTest {
 
     private User adminUser;
     private User providerUser;
+    private User buyerUser;
     private String adminToken;
     private String providerToken;
     private String buyerToken;
@@ -100,6 +102,7 @@ class BuyerAccessIntegrationTest {
     private Long listedPackageId;
     private Long readyPackageId;
     private Long listedClaimId;
+    private Long readyClaimId;
     private Long listedDocId;
 
     @BeforeEach
@@ -107,7 +110,7 @@ class BuyerAccessIntegrationTest {
         cleanupTestData();
         adminUser = createUser(ADMIN_EMAIL, Role.ADMIN, VerificationStatus.APPROVED);
         providerUser = createUser(PROVIDER_EMAIL, Role.SERVICE_PROVIDER, VerificationStatus.APPROVED);
-        createUser(BUYER_EMAIL, Role.COLLECTION_AGENCY, VerificationStatus.APPROVED);
+        buyerUser = createUser(BUYER_EMAIL, Role.COLLECTION_AGENCY, VerificationStatus.APPROVED);
 
         adminToken = loginAndGetAccessToken(ADMIN_EMAIL);
         providerToken = loginAndGetAccessToken(PROVIDER_EMAIL);
@@ -144,6 +147,7 @@ class BuyerAccessIntegrationTest {
         recordScore(listedClaim, 95, "A");
         recordScore(readyClaim, 80, "B");
         listedClaimId = listedClaim.getId();
+        readyClaimId = readyClaim.getId();
 
         BuildResponse firstBuild = buildOnePackageAsAdmin();
         assertThat(firstBuild.claimIds).containsExactly(listedClaimId);
@@ -349,6 +353,80 @@ class BuyerAccessIntegrationTest {
         assertApiError(detailResult, "FORBIDDEN");
     }
 
+    @Test
+    void entitledBuyerCanExportPackageAsAttachment_withOnlyAnonymizedFields_andAuditRecorded() throws Exception {
+        mockMvc.perform(
+                        post("/api/admin/packages/{id}/anonymized-views/generate", readyPackageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isNoContent());
+        grantEntitlement(readyPackageId, buyerUser.getId());
+
+        MvcResult exportResult = mockMvc.perform(
+                        get("/api/buyer/packages/{id}/export", readyPackageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + buyerToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(header().string(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"claimchain-package-" + readyPackageId + ".json\""
+                ))
+                .andReturn();
+
+        JsonNode exportBody = objectMapper.readTree(exportResult.getResponse().getContentAsString());
+        assertThat(exportBody.has("package")).isTrue();
+        assertThat(exportBody.get("package").get("id").asLong()).isEqualTo(readyPackageId);
+        assertThat(exportBody.get("package").get("status").asText()).isEqualTo(PackageStatus.READY.name());
+        assertThat(exportBody.get("claims").isArray()).isTrue();
+        assertThat(exportBody.get("claims").size()).isEqualTo(1);
+        assertThat(exportBody.get("claims").get(0).get("claimId").asLong()).isEqualTo(readyClaimId);
+        assertThat(exportBody.get("claims").get(0).has("jurisdictionState")).isTrue();
+        assertThat(exportBody.get("claims").get(0).has("docTypesPresent")).isTrue();
+
+        String responseBody = exportResult.getResponse().getContentAsString();
+        assertThat(responseBody).doesNotContain("Ready Debtor PII");
+        assertThat(responseBody).doesNotContain("ready-debtor-pii@example.com");
+        assertThat(responseBody).doesNotContain("222 Hidden Lane");
+        assertThat(responseBody).doesNotContain("debtorName");
+        assertThat(responseBody).doesNotContain("debtorEmail");
+        assertThat(responseBody).doesNotContain("debtorAddress");
+
+        Integer exportAuditCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM audit_events WHERE action = 'PACKAGE_EXPORTED' AND entity_type = 'PACKAGE' AND entity_id = ?",
+                Integer.class,
+                readyPackageId
+        );
+        assertThat(exportAuditCount).isEqualTo(1);
+        String exportAuditMetadata = jdbcTemplate.queryForObject(
+                "SELECT metadata_json FROM audit_events WHERE action = 'PACKAGE_EXPORTED' AND entity_type = 'PACKAGE' AND entity_id = ? ORDER BY id DESC LIMIT 1",
+                String.class,
+                readyPackageId
+        );
+        assertThat(exportAuditMetadata).contains("\"buyerUserId\":" + buyerUser.getId());
+        assertThat(exportAuditMetadata).contains("\"packageId\":" + readyPackageId);
+        assertThat(exportAuditMetadata).contains("\"claimCount\":1");
+    }
+
+    @Test
+    void buyerExportReturns404WhenNotEntitled() throws Exception {
+        MvcResult result = mockMvc.perform(
+                        get("/api/buyer/packages/{id}/export", listedPackageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + buyerToken)
+                )
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+
+        assertApiError(result, "NOT_FOUND");
+        Integer exportAuditCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM audit_events WHERE action = 'PACKAGE_EXPORTED' AND entity_type = 'PACKAGE' AND entity_id = ?",
+                Integer.class,
+                listedPackageId
+        );
+        assertThat(exportAuditCount).isEqualTo(0);
+    }
+
     private BuildResponse buildOnePackageAsAdmin() throws Exception {
         MvcResult result = mockMvc.perform(
                         post("/api/admin/packages/build")
@@ -528,6 +606,14 @@ class BuyerAccessIntegrationTest {
 
         JsonNode body = objectMapper.readTree(loginResult.getResponse().getContentAsString());
         return body.get("accessToken").asText();
+    }
+
+    private void grantEntitlement(Long packageId, Long buyerUserId) {
+        jdbcTemplate.update(
+                "INSERT INTO buyer_entitlements(package_id, buyer_user_id) VALUES (?, ?)",
+                packageId,
+                buyerUserId
+        );
     }
 
     private void assertApiError(MvcResult result, String expectedCode) throws Exception {
