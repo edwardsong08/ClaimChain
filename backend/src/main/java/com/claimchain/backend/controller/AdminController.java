@@ -1,6 +1,7 @@
 package com.claimchain.backend.controller;
 
 import com.claimchain.backend.config.RequestIdFilter;
+import com.claimchain.backend.dto.AnonymizedClaimViewResponseDTO;
 import com.claimchain.backend.dto.AdminClaimDecisionRequestDTO;
 import com.claimchain.backend.dto.AdminBootstrapRequestDTO;
 import com.claimchain.backend.dto.ApiErrorResponse;
@@ -13,6 +14,7 @@ import com.claimchain.backend.dto.PackageCreateRequestDTO;
 import com.claimchain.backend.dto.PackageDetailResponseDTO;
 import com.claimchain.backend.dto.PackageResponseDTO;
 import com.claimchain.backend.dto.RejectUserRequestDTO;
+import com.claimchain.backend.model.AnonymizedClaimView;
 import com.claimchain.backend.model.Claim;
 import com.claimchain.backend.model.Package;
 import com.claimchain.backend.model.PackageClaim;
@@ -20,6 +22,7 @@ import com.claimchain.backend.model.PackageStatus;
 import com.claimchain.backend.model.User;
 import com.claimchain.backend.repository.UserRepository;
 import com.claimchain.backend.service.AdminService;
+import com.claimchain.backend.service.AnonymizedViewService;
 import com.claimchain.backend.service.AuthService;
 import com.claimchain.backend.service.ClaimService;
 import com.claimchain.backend.service.ClaimScoringPersistenceService;
@@ -48,6 +51,7 @@ public class AdminController {
     private final ClaimService claimService;
     private final ClaimScoringPersistenceService claimScoringPersistenceService;
     private final PackageService packageService;
+    private final AnonymizedViewService anonymizedViewService;
     private final UserRepository userRepository;
 
     public AdminController(
@@ -56,6 +60,7 @@ public class AdminController {
             ClaimService claimService,
             ClaimScoringPersistenceService claimScoringPersistenceService,
             PackageService packageService,
+            AnonymizedViewService anonymizedViewService,
             UserRepository userRepository
     ) {
         this.authService = authService;
@@ -63,6 +68,7 @@ public class AdminController {
         this.claimService = claimService;
         this.claimScoringPersistenceService = claimScoringPersistenceService;
         this.packageService = packageService;
+        this.anonymizedViewService = anonymizedViewService;
         this.userRepository = userRepository;
     }
 
@@ -219,6 +225,31 @@ public class AdminController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    @PostMapping("/packages/{id}/anonymized-views/generate")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> generateAnonymizedViews(
+            @PathVariable Long id,
+            Principal principal
+    ) {
+        Long adminUserId = requirePrincipalUserId(principal);
+        anonymizedViewService.generateForPackage(id, adminUserId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/packages/{id}/anonymized-views")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<AnonymizedClaimViewResponseDTO>> listAnonymizedViews(
+            @PathVariable Long id,
+            Principal principal
+    ) {
+        Long adminUserId = requirePrincipalUserId(principal);
+        List<AnonymizedClaimViewResponseDTO> response = anonymizedViewService.listByPackage(id, adminUserId)
+                .stream()
+                .map(this::toAnonymizedClaimViewResponse)
+                .toList();
+        return ResponseEntity.ok(response);
+    }
+
     @ExceptionHandler(ClaimService.ClaimFrozenException.class)
     public ResponseEntity<ApiErrorResponse> handleClaimFrozen(
             ClaimService.ClaimFrozenException ex,
@@ -294,6 +325,22 @@ public class AdminController {
         dto.setTotalFaceValue(result.getTotalFaceValue());
         dto.setClaimIds(result.getClaimIds());
         dto.setFailureReasons(result.getFailureReasons());
+        return dto;
+    }
+
+    private AnonymizedClaimViewResponseDTO toAnonymizedClaimViewResponse(AnonymizedClaimView view) {
+        AnonymizedClaimViewResponseDTO dto = new AnonymizedClaimViewResponseDTO();
+        dto.setClaimId(view.getClaim() == null ? null : view.getClaim().getId());
+        dto.setJurisdictionState(view.getJurisdictionState());
+        dto.setDebtorType(view.getDebtorType());
+        dto.setClaimType(view.getClaimType());
+        dto.setDisputeStatus(view.getDisputeStatus());
+        dto.setDebtAgeDays(view.getDebtAgeDays());
+        dto.setAmountBand(view.getAmountBand());
+        dto.setScoreTotal(view.getScoreTotal());
+        dto.setGrade(view.getGrade());
+        dto.setExtractionSuccessRate(view.getExtractionSuccessRate());
+        dto.setDocTypesPresent(view.getDocTypesPresent());
         return dto;
     }
 
