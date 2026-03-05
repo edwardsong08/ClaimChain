@@ -9,6 +9,7 @@ import java.util.List;
 
 public interface UserRepository extends JpaRepository<User, Long> {
     User findByEmail(String email);
+    boolean existsByEmailIgnoreCase(String email);
     List<User> findByVerificationStatus(VerificationStatus status);
     boolean existsByRole(Role role);
 }
