@@ -7,12 +7,21 @@ import com.claimchain.backend.dto.ApiErrorResponse;
 import com.claimchain.backend.dto.ClaimFreezeOverrideRequestDTO;
 import com.claimchain.backend.dto.ClaimScoreResponseDTO;
 import com.claimchain.backend.dto.ClaimResponseDTO;
+import com.claimchain.backend.dto.PackageCreateRequestDTO;
+import com.claimchain.backend.dto.PackageDetailResponseDTO;
+import com.claimchain.backend.dto.PackageResponseDTO;
 import com.claimchain.backend.dto.RejectUserRequestDTO;
+import com.claimchain.backend.model.Claim;
+import com.claimchain.backend.model.Package;
+import com.claimchain.backend.model.PackageClaim;
+import com.claimchain.backend.model.PackageStatus;
 import com.claimchain.backend.model.User;
+import com.claimchain.backend.repository.UserRepository;
 import com.claimchain.backend.service.AdminService;
 import com.claimchain.backend.service.AuthService;
 import com.claimchain.backend.service.ClaimService;
 import com.claimchain.backend.service.ClaimScoringPersistenceService;
+import com.claimchain.backend.service.PackageService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -22,8 +31,11 @@ import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -33,17 +45,23 @@ public class AdminController {
     private final AdminService adminService;
     private final ClaimService claimService;
     private final ClaimScoringPersistenceService claimScoringPersistenceService;
+    private final PackageService packageService;
+    private final UserRepository userRepository;
 
     public AdminController(
             AuthService authService,
             AdminService adminService,
             ClaimService claimService,
-            ClaimScoringPersistenceService claimScoringPersistenceService
+            ClaimScoringPersistenceService claimScoringPersistenceService,
+            PackageService packageService,
+            UserRepository userRepository
     ) {
         this.authService = authService;
         this.adminService = adminService;
         this.claimService = claimService;
         this.claimScoringPersistenceService = claimScoringPersistenceService;
+        this.packageService = packageService;
+        this.userRepository = userRepository;
     }
 
     @PostMapping("/bootstrap")
@@ -137,6 +155,49 @@ public class AdminController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/packages")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<PackageResponseDTO> createDraftPackage(
+            @Valid @RequestBody(required = false) PackageCreateRequestDTO request,
+            Principal principal
+    ) {
+        Long adminUserId = requirePrincipalUserId(principal);
+        Package created = packageService.createDraftPackage(adminUserId, request == null ? null : request.getNotes());
+        return ResponseEntity.status(HttpStatus.CREATED).body(toPackageResponse(created));
+    }
+
+    @PostMapping("/packages/{id}/claims/{claimId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> addClaimToPackage(
+            @PathVariable Long id,
+            @PathVariable Long claimId,
+            Principal principal
+    ) {
+        Long adminUserId = requirePrincipalUserId(principal);
+        packageService.addClaimToPackage(id, claimId, adminUserId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/packages/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<PackageDetailResponseDTO> getPackage(@PathVariable Long id) {
+        Package packageEntity = packageService.getPackage(id);
+        return ResponseEntity.ok(toPackageDetail(packageEntity));
+    }
+
+    @GetMapping("/packages")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<PackageResponseDTO>> listPackages(
+            @RequestParam(name = "status", required = false) String status
+    ) {
+        PackageStatus parsedStatus = packageService.parsePackageStatus(status);
+        List<PackageResponseDTO> response = packageService.listPackages(parsedStatus)
+                .stream()
+                .map(this::toPackageResponse)
+                .toList();
+        return ResponseEntity.ok(response);
+    }
+
     @ExceptionHandler(ClaimService.ClaimFrozenException.class)
     public ResponseEntity<ApiErrorResponse> handleClaimFrozen(
             ClaimService.ClaimFrozenException ex,
@@ -152,4 +213,52 @@ public class AdminController {
         );
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
+
+    private Long requirePrincipalUserId(Principal principal) {
+        String normalizedEmail = principal == null || principal.getName() == null
+                ? null
+                : principal.getName().trim().toLowerCase(Locale.ROOT);
+        User user = normalizedEmail == null ? null : userRepository.findByEmail(normalizedEmail);
+        if (user == null) {
+            throw new IllegalArgumentException("Admin user not found.");
+        }
+        return user.getId();
+    }
+
+    private PackageResponseDTO toPackageResponse(Package packageEntity) {
+        PackageResponseDTO dto = new PackageResponseDTO();
+        dto.setId(packageEntity.getId());
+        dto.setStatus(packageEntity.getStatus() == null ? null : packageEntity.getStatus().name());
+        dto.setTotalClaims(packageEntity.getTotalClaims());
+        dto.setTotalFaceValue(packageEntity.getTotalFaceValue());
+        dto.setCreatedAt(packageEntity.getCreatedAt());
+        return dto;
+    }
+
+    private PackageDetailResponseDTO toPackageDetail(Package packageEntity) {
+        PackageDetailResponseDTO dto = new PackageDetailResponseDTO();
+        dto.setId(packageEntity.getId());
+        dto.setStatus(packageEntity.getStatus() == null ? null : packageEntity.getStatus().name());
+        dto.setTotalClaims(packageEntity.getTotalClaims());
+        dto.setTotalFaceValue(packageEntity.getTotalFaceValue());
+        dto.setNotes(packageEntity.getNotes());
+        dto.setCreatedAt(packageEntity.getCreatedAt());
+        dto.setCreatedByUserId(packageEntity.getCreatedByUser() == null ? null : packageEntity.getCreatedByUser().getId());
+        dto.setRulesetId(packageEntity.getRuleset() == null ? null : packageEntity.getRuleset().getId());
+        dto.setRulesetVersion(packageEntity.getRulesetVersion());
+
+        List<Long> claimIds = packageEntity.getPackageClaims().stream()
+                .sorted(Comparator.comparing(
+                        PackageClaim::getAddedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                ))
+                .map(PackageClaim::getClaim)
+                .filter(Objects::nonNull)
+                .map(Claim::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        dto.setClaimIds(claimIds);
+        return dto;
+    }
+
 }
