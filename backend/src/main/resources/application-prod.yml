@@ -19,7 +19,7 @@ security:
     secret: ${JWT_SECRET}
     expiration-millis: ${JWT_EXPIRATION_MILLIS:86400000}
 
-app:
+claimchain:
   cors:
     # REQUIRED in prod. No defaults.
-    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+    allowedOrigins: ${CORS_ALLOWED_ORIGINS}

@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.util.ArrayList;
 import java.util.List;
 
-@ConfigurationProperties(prefix = "app.cors")
+@ConfigurationProperties(prefix = "claimchain.cors")
 public class CorsProperties {
 
     // Strict by default: empty list => do not allow browser origins unless explicitly configured

@@ -82,6 +82,16 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(EmailAlreadyRegisteredException.class)
+    public ResponseEntity<ApiErrorResponse> handleEmailAlreadyRegistered(
+            EmailAlreadyRegisteredException ex,
+            HttpServletRequest request
+    ) {
+        String email = ex.getEmail() == null || ex.getEmail().isBlank() ? null : ex.getEmail();
+        List<String> details = email == null ? List.of(ex.getMessage()) : List.of("email: " + email);
+        return build(HttpStatus.CONFLICT, "EMAIL_ALREADY_REGISTERED", ex.getMessage(), details, request);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleAccessDenied(
             AccessDeniedException ex,

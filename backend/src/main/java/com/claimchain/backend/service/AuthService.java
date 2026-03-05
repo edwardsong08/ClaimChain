@@ -6,6 +6,7 @@ import com.claimchain.backend.dto.ForgotPasswordRequestDTO;
 import com.claimchain.backend.dto.RegisterRequest;
 import com.claimchain.backend.dto.ResetPasswordRequestDTO;
 import com.claimchain.backend.exception.AuthTokenException;
+import com.claimchain.backend.exception.EmailAlreadyRegisteredException;
 import com.claimchain.backend.model.AdminBootstrapState;
 import com.claimchain.backend.model.PasswordResetToken;
 import com.claimchain.backend.model.RefreshToken;
@@ -26,6 +27,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -78,13 +80,14 @@ public class AuthService {
     private long passwordResetExpirationMillis;
 
     public String register(RegisterRequest request, Role role) {
-        if (userRepository.findByEmail(request.getEmail()) != null) {
-            throw new RuntimeException("Email already registered.");
+        String normalizedEmail = normalizeEmail(request.getEmail());
+        if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
+            throw new EmailAlreadyRegisteredException(normalizedEmail);
         }
 
         User user = new User();
         user.setName(request.getName());
-        user.setEmail(request.getEmail());
+        user.setEmail(normalizedEmail);
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole(role);
 
@@ -98,7 +101,11 @@ public class AuthService {
         // Default to pending verification at signup
         user.setVerificationStatus(VerificationStatus.PENDING);
 
-        userRepository.save(user);
+        try {
+            userRepository.save(user);
+        } catch (DataIntegrityViolationException ex) {
+            throw new EmailAlreadyRegisteredException(normalizedEmail);
+        }
         return jwtService.generateToken(user);
     }
 
@@ -299,5 +306,12 @@ public class AuthService {
         byte[] bytes = new byte[32]; // 256-bit random
         SECURE_RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private String normalizeEmail(String email) {
+        if (email == null) {
+            return null;
+        }
+        return email.trim().toLowerCase(Locale.ROOT);
     }
 }
