@@ -3,6 +3,7 @@ package com.claimchain.backend.exception;
 import com.claimchain.backend.config.RequestIdFilter;
 import com.claimchain.backend.dto.ApiErrorResponse;
 import com.claimchain.backend.ruleset.RulesetValidationException;
+import com.claimchain.backend.service.PackageService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
@@ -94,6 +95,30 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         return build(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required", List.of("Missing or invalid credentials"), request);
+    }
+
+    @ExceptionHandler(PackageService.PackageValidationException.class)
+    public ResponseEntity<ApiErrorResponse> handlePackageValidation(
+            PackageService.PackageValidationException ex,
+            HttpServletRequest request
+    ) {
+        return build(HttpStatus.BAD_REQUEST, ex.getCode(), ex.getMessage(), List.of(ex.getMessage()), request);
+    }
+
+    @ExceptionHandler(PackageService.PackageConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handlePackageConflict(
+            PackageService.PackageConflictException ex,
+            HttpServletRequest request
+    ) {
+        return build(HttpStatus.CONFLICT, ex.getCode(), ex.getMessage(), List.of(ex.getMessage()), request);
+    }
+
+    @ExceptionHandler({PackageService.PackageNotFoundException.class, PackageService.ClaimNotFoundException.class})
+    public ResponseEntity<ApiErrorResponse> handlePackageNotFound(
+            RuntimeException ex,
+            HttpServletRequest request
+    ) {
+        return build(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage(), List.of(ex.getMessage()), request);
     }
 
     @ExceptionHandler(Exception.class)
