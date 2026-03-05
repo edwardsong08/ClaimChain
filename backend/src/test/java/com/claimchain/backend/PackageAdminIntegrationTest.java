@@ -249,6 +249,8 @@ class PackageAdminIntegrationTest {
     }
 
     private void cleanupTestData() {
+        jdbcTemplate.update("DELETE FROM purchase_events");
+        jdbcTemplate.update("DELETE FROM purchases");
         jdbcTemplate.update("DELETE FROM anonymized_claim_views");
         jdbcTemplate.update("DELETE FROM buyer_entitlements");
         jdbcTemplate.update("DELETE FROM package_claims");

@@ -3,6 +3,7 @@ package com.claimchain.backend.exception;
 import com.claimchain.backend.config.RequestIdFilter;
 import com.claimchain.backend.dto.ApiErrorResponse;
 import com.claimchain.backend.ruleset.RulesetValidationException;
+import com.claimchain.backend.service.ClaimService;
 import com.claimchain.backend.service.PackageService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -114,6 +115,14 @@ public class GlobalExceptionHandler {
                 ? List.of(ex.getMessage())
                 : ex.getDetails();
         return build(HttpStatus.CONFLICT, ex.getCode(), ex.getMessage(), details, request);
+    }
+
+    @ExceptionHandler(ClaimService.ClaimFrozenException.class)
+    public ResponseEntity<ApiErrorResponse> handleClaimFrozen(
+            ClaimService.ClaimFrozenException ex,
+            HttpServletRequest request
+    ) {
+        return build(HttpStatus.CONFLICT, "CLAIM_FROZEN", ex.getMessage(), List.of(ex.getMessage()), request);
     }
 
     @ExceptionHandler({PackageService.PackageNotFoundException.class, PackageService.ClaimNotFoundException.class})
