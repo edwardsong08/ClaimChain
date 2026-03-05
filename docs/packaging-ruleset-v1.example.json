@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "eligibility": {
+    "minScore": 55,
+    "minGrade": "C",
+    "requiredDocTypes": ["INVOICE", "CONTRACT"],
+    "minExtractionSuccessRate": 0.6,
+    "excludeDisputeStatuses": ["ACTIVE"]
+  },
+  "packageSizing": {
+    "minClaims": 10,
+    "maxClaims": 30,
+    "minTotalFaceValue": 25000,
+    "maxTotalFaceValue": 150000
+  },
+  "diversification": {
+    "maxPctPerJurisdiction": 0.4,
+    "maxPctPerDebtorType": 0.6
+  },
+  "selectionStrategy": {
+    "mode": "BEST_FIRST"
+  }
+}
