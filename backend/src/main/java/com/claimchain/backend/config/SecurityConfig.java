@@ -56,6 +56,7 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/webhooks/stripe").permitAll()
                 .requestMatchers("/api/buyer/**").hasRole("COLLECTION_AGENCY")
                 .anyRequest().authenticated() // 🔒 protect all other routes
             )
@@ -93,7 +94,7 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(corsProperties.getAllowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Request-Id"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key", "Stripe-Signature", "X-Request-Id"));
         config.setExposedHeaders(List.of("X-Request-Id"));
         config.setAllowCredentials(false);
 

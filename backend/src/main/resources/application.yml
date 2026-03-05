@@ -24,3 +24,10 @@ documents:
 storage:
   local:
     base-dir: ${STORAGE_LOCAL_BASE_DIR:storage/dev}
+
+claimchain:
+  stripe:
+    secretKey: ${STRIPE_SECRET_KEY:}
+    webhookSecret: ${STRIPE_WEBHOOK_SECRET:}
+    successUrl: ${STRIPE_SUCCESS_URL:http://localhost:3000/stripe/success}
+    cancelUrl: ${STRIPE_CANCEL_URL:http://localhost:3000/stripe/cancel}
