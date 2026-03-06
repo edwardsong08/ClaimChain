@@ -57,15 +57,30 @@ jobs:
           echo "jar=$JAR_PATH" >> $GITHUB_OUTPUT
 
       - name: Install SSH key
+        shell: bash
         run: |
+            set -euo pipefail
+            set -x
             mkdir -p ~/.ssh
-            cat > ~/.ssh/id_ed25519 << 'EOF'
+            chmod 700 ~/.ssh
+
+            # Write key using literal heredoc delimiter (prevents interpolation)
+            cat > ~/.ssh/id_ed25519 <<'EOF'
             ${{ secrets.STAGING_EC2_SSH_KEY }}
             EOF
-            # normalize CRLF just in case
+
+            # Normalize CRLF and trim possible leading/trailing blank lines
             sed -i 's/\r$//' ~/.ssh/id_ed25519
+            sed -i '1{/^$/d;}' ~/.ssh/id_ed25519
+            sed -i '${/^$/d;}' ~/.ssh/id_ed25519
+
             chmod 600 ~/.ssh/id_ed25519
-            ssh-keyscan -H ${{ secrets.STAGING_EC2_HOST }} >> ~/.ssh/known_hosts
+
+            # Validate the key file without printing it
+            ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
+
+            # Add host key (avoid failure if ssh-keyscan is flaky)
+            ssh-keyscan -T 10 -H "${{ secrets.STAGING_EC2_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Upload jar to EC2
         run: |
