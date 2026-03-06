@@ -58,10 +58,14 @@ jobs:
 
       - name: Install SSH key
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.STAGING_EC2_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.STAGING_EC2_HOST }} >> ~/.ssh/known_hosts
+            mkdir -p ~/.ssh
+            cat > ~/.ssh/id_ed25519 << 'EOF'
+            ${{ secrets.STAGING_EC2_SSH_KEY }}
+            EOF
+            # normalize CRLF just in case
+            sed -i 's/\r$//' ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+            ssh-keyscan -H ${{ secrets.STAGING_EC2_HOST }} >> ~/.ssh/known_hosts
 
       - name: Upload jar to EC2
         run: |
