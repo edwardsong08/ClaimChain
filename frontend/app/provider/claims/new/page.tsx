@@ -11,6 +11,44 @@ import { useAuthSession } from "@/hooks/use-auth-session";
 import { createClaim } from "@/services/claims";
 import type { CreateClaimRequest } from "@/types/claims";
 
+const CLAIM_TYPE_OPTIONS = [
+  { label: "Services", value: "SERVICES" },
+  { label: "Invoice", value: "INVOICE" },
+  { label: "Rent", value: "RENT" },
+  { label: "Loan", value: "LOAN" },
+  { label: "Other", value: "OTHER" },
+] as const;
+
+const DEBTOR_TYPE_OPTIONS = [
+  { label: "Consumer", value: "CONSUMER" },
+  { label: "Business", value: "BUSINESS" },
+  { label: "Government", value: "GOV" },
+  { label: "Insurance", value: "INSURANCE" },
+  { label: "Other", value: "OTHER" },
+] as const;
+
+const DISPUTE_STATUS_OPTIONS = [
+  { label: "None", value: "NONE" },
+  { label: "Possible", value: "POSSIBLE" },
+  { label: "Active", value: "ACTIVE" },
+  { label: "Resolved", value: "RESOLVED" },
+] as const;
+
+const CLAIM_TYPE_VALUES = CLAIM_TYPE_OPTIONS.map((option) => option.value) as [
+  (typeof CLAIM_TYPE_OPTIONS)[number]["value"],
+  ...(typeof CLAIM_TYPE_OPTIONS)[number]["value"][],
+];
+
+const DEBTOR_TYPE_VALUES = DEBTOR_TYPE_OPTIONS.map((option) => option.value) as [
+  (typeof DEBTOR_TYPE_OPTIONS)[number]["value"],
+  ...(typeof DEBTOR_TYPE_OPTIONS)[number]["value"][],
+];
+
+const DISPUTE_STATUS_VALUES = DISPUTE_STATUS_OPTIONS.map((option) => option.value) as [
+  (typeof DISPUTE_STATUS_OPTIONS)[number]["value"],
+  ...(typeof DISPUTE_STATUS_OPTIONS)[number]["value"][],
+];
+
 const claimFormSchema = z.object({
   debtorName: z.string().optional(),
   debtorEmail: z
@@ -18,14 +56,14 @@ const claimFormSchema = z.object({
     .optional(),
   debtorPhone: z.string().optional(),
   debtorAddress: z.string().trim().min(1, "Debtor address is required."),
-  debtorType: z.string().trim().min(1, "Debtor type is required."),
+  debtorType: z.enum(DEBTOR_TYPE_VALUES),
   jurisdictionState: z
     .string()
     .trim()
     .length(2, "Use a 2-letter state code.")
     .regex(/^[A-Za-z]{2}$/, "Use a valid 2-letter state code."),
-  claimType: z.string().trim().min(1, "Claim type is required."),
-  disputeStatus: z.string().trim().min(1, "Dispute status is required."),
+  claimType: z.enum(CLAIM_TYPE_VALUES),
+  disputeStatus: z.enum(DISPUTE_STATUS_VALUES),
   clientName: z.string().trim().min(1, "Client name is required."),
   clientContact: z.string().trim().min(1, "Client contact is required."),
   clientAddress: z.string().trim().min(1, "Client address is required."),
@@ -108,10 +146,10 @@ export default function NewProviderClaimPage() {
       debtorEmail: "",
       debtorPhone: "",
       debtorAddress: "",
-      debtorType: "",
+      debtorType: "CONSUMER",
       jurisdictionState: "",
-      claimType: "",
-      disputeStatus: "",
+      claimType: "SERVICES",
+      disputeStatus: "NONE",
       clientName: "",
       clientContact: "",
       clientAddress: "",
@@ -153,10 +191,10 @@ export default function NewProviderClaimPage() {
 
     const payload: CreateClaimRequest = {
       debtorAddress: values.debtorAddress.trim(),
-      debtorType: values.debtorType.trim(),
+      debtorType: values.debtorType,
       jurisdictionState: values.jurisdictionState.trim().toUpperCase(),
-      claimType: values.claimType.trim(),
-      disputeStatus: values.disputeStatus.trim(),
+      claimType: values.claimType,
+      disputeStatus: values.disputeStatus,
       clientName: values.clientName.trim(),
       clientContact: values.clientContact.trim(),
       clientAddress: values.clientAddress.trim(),
@@ -261,13 +299,17 @@ export default function NewProviderClaimPage() {
             <label htmlFor="debtorType" className="mb-1 block text-sm font-medium">
               Debtor Type
             </label>
-            <input
+            <select
               id="debtorType"
-              type="text"
-              placeholder="e.g. INDIVIDUAL"
               {...register("debtorType")}
               className="w-full rounded-md border px-3 py-2 outline-none focus:ring-2 focus:ring-black"
-            />
+            >
+              {DEBTOR_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
             {errors.debtorType && (
               <p className="mt-1 text-sm text-red-600">{errors.debtorType.message}</p>
             )}
@@ -299,12 +341,17 @@ export default function NewProviderClaimPage() {
             <label htmlFor="claimType" className="mb-1 block text-sm font-medium">
               Claim Type
             </label>
-            <input
+            <select
               id="claimType"
-              type="text"
               {...register("claimType")}
               className="w-full rounded-md border px-3 py-2 outline-none focus:ring-2 focus:ring-black"
-            />
+            >
+              {CLAIM_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
             {errors.claimType && (
               <p className="mt-1 text-sm text-red-600">{errors.claimType.message}</p>
             )}
@@ -314,13 +361,17 @@ export default function NewProviderClaimPage() {
             <label htmlFor="disputeStatus" className="mb-1 block text-sm font-medium">
               Dispute Status
             </label>
-            <input
+            <select
               id="disputeStatus"
-              type="text"
-              placeholder="e.g. NOT_DISPUTED"
               {...register("disputeStatus")}
               className="w-full rounded-md border px-3 py-2 outline-none focus:ring-2 focus:ring-black"
-            />
+            >
+              {DISPUTE_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
             {errors.disputeStatus && (
               <p className="mt-1 text-sm text-red-600">{errors.disputeStatus.message}</p>
             )}
