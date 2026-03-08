@@ -1,0 +1,48 @@
+export type CreateClaimRequest = {
+  debtorAddress: string;
+  debtorType: string;
+  jurisdictionState: string;
+  claimType: string;
+  disputeStatus: string;
+  clientName: string;
+  clientContact: string;
+  clientAddress: string;
+  debtType: string;
+  contactHistory: string;
+  currentAmount: number;
+  dateOfDefault: string;
+  debtorName?: string;
+  debtorEmail?: string;
+  debtorPhone?: string;
+  originalAmount?: number;
+  dateOfService?: string;
+  lastPaymentDate?: string;
+  contractFileKey?: string;
+};
+
+export type Claim = {
+  id: string;
+  debtorName?: string | null;
+  debtorEmail?: string | null;
+  debtorPhone?: string | null;
+  debtorAddress: string;
+  debtorType: string;
+  jurisdictionState: string;
+  claimType: string;
+  disputeStatus: string;
+  clientName: string;
+  clientContact: string;
+  clientAddress: string;
+  debtType: string;
+  contactHistory: string;
+  originalAmount?: number | null;
+  currentAmount?: number | null;
+  amount?: number | null;
+  dateOfDefault: string;
+  dateOfService?: string | null;
+  lastPaymentDate?: string | null;
+  contractFileKey?: string | null;
+  status?: string | null;
+  submittedAt?: string | null;
+  submittedBy?: string | null;
+};

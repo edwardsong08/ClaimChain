@@ -66,6 +66,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/webhooks/stripe").permitAll()
                 .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/admin/bootstrap").permitAll()
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/buyer/**").hasRole("COLLECTION_AGENCY")
                 .anyRequest().authenticated() // 🔒 protect all other routes
             )

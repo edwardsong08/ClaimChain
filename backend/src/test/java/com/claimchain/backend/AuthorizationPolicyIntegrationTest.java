@@ -93,6 +93,25 @@ class AuthorizationPolicyIntegrationTest {
     }
 
     @Test
+    void adminBootstrap_allowsAnonymousThroughSecurity() throws Exception {
+        MvcResult bootstrapResult = mockMvc.perform(
+                        post("/api/admin/bootstrap")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "bootstrapToken":"definitely-not-the-bootstrap-token",
+                                          "email":"bootstrap-check@authorization-policy-test.local",
+                                          "password":"AdminPassword123!"
+                                        }
+                                        """)
+                )
+                .andReturn();
+
+        int status = bootstrapResult.getResponse().getStatus();
+        assertThat(status).isNotIn(401, 403);
+    }
+
+    @Test
     void claimSubmission_requiresRoleAndApprovedVerification() throws Exception {
         String collectionToken = loginAndGetAccessToken(COLLECTION_EMAIL, PASSWORD);
         String pendingProviderToken = loginAndGetAccessToken(PENDING_PROVIDER_EMAIL, PASSWORD);

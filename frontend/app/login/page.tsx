@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { login } from "@/services/auth";
 import { setAuthSession } from "@/lib/auth-storage";
+import { getDashboardPathForRole } from "@/lib/role-routing";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address."),
@@ -14,19 +15,6 @@ const loginSchema = z.object({
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
-
-function getRedirectPath(role: string) {
-  switch (role) {
-    case "SERVICE_PROVIDER":
-      return "/provider/dashboard";
-    case "COLLECTION_AGENCY":
-      return "/buyer/dashboard";
-    case "ADMIN":
-      return "/admin/dashboard";
-    default:
-      return "/";
-  }
-}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,7 +36,7 @@ export default function LoginPage() {
       const result = await login(data);
       setAuthSession(result.token, result.role);
       toast.success("Logged in successfully.");
-      router.replace(getRedirectPath(result.role));
+      router.replace(getDashboardPathForRole(result.role) ?? "/");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Login failed.";

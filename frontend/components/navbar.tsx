@@ -3,33 +3,25 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuthSession } from "@/hooks/use-auth-session";
-
-function getDashboardPath(role: string | null) {
-  switch (role) {
-    case "SERVICE_PROVIDER":
-      return "/provider/dashboard";
-    case "COLLECTION_AGENCY":
-      return "/buyer/dashboard";
-    case "ADMIN":
-      return "/admin/dashboard";
-    default:
-      return "/";
-  }
-}
+import { getDashboardPathForRole } from "@/lib/role-routing";
 
 export default function Navbar() {
   const router = useRouter();
   const { role, isAuthenticated, isReady, logout } = useAuthSession();
+  const dashboardPath = getDashboardPathForRole(role);
 
   const handleLogout = () => {
     logout();
-    router.push("/");
+    router.replace("/");
   };
 
   return (
     <header className="border-b">
       <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        <Link href={isAuthenticated ? getDashboardPath(role) : "/"} className="text-xl font-semibold">
+        <Link
+          href={isAuthenticated && dashboardPath ? dashboardPath : "/"}
+          className="text-xl font-semibold"
+        >
           ClaimChain
         </Link>
 
@@ -43,7 +35,7 @@ export default function Navbar() {
             </>
           ) : (
             <>
-              <Link href={getDashboardPath(role)}>Dashboard</Link>
+              {dashboardPath && <Link href={dashboardPath}>Dashboard</Link>}
               <button
                 type="button"
                 onClick={handleLogout}

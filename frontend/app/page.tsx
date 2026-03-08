@@ -3,35 +3,36 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthSession } from "@/hooks/use-auth-session";
-
-function getDashboardPath(role: string | null) {
-  switch (role) {
-    case "SERVICE_PROVIDER":
-      return "/provider/dashboard";
-    case "COLLECTION_AGENCY":
-      return "/buyer/dashboard";
-    case "ADMIN":
-      return "/admin/dashboard";
-    default:
-      return "/";
-  }
-}
+import { getDashboardPathForRole } from "@/lib/role-routing";
 
 export default function HomePage() {
   const router = useRouter();
   const { role, isAuthenticated, isReady } = useAuthSession();
+  const dashboardPath = getDashboardPathForRole(role);
 
   useEffect(() => {
     if (!isReady) return;
 
-    if (isAuthenticated) {
-      router.replace(getDashboardPath(role));
+    if (isAuthenticated && dashboardPath) {
+      router.replace(dashboardPath);
     }
-  }, [isAuthenticated, isReady, role, router]);
+  }, [dashboardPath, isAuthenticated, isReady, router]);
 
-  if (!isReady) return null;
+  if (!isReady) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <p className="text-sm text-gray-600">Loading session...</p>
+      </main>
+    );
+  }
 
-  if (isAuthenticated) return null;
+  if (isAuthenticated && dashboardPath) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <p className="text-sm text-gray-600">Redirecting to dashboard...</p>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen flex items-center justify-center">

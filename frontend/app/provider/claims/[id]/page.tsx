@@ -1,0 +1,361 @@
+"use client";
+
+import { type FormEvent, useRef, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { useAuthSession } from "@/hooks/use-auth-session";
+import { getClaimById } from "@/services/claims";
+import { listClaimDocuments, uploadClaimDocument } from "@/services/documents";
+
+const usdFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+});
+
+function formatStatus(status: string | null | undefined) {
+  if (!status) return "N/A";
+  return status.replaceAll("_", " ");
+}
+
+function formatCurrency(value: number | null | undefined) {
+  if (typeof value !== "number") return "N/A";
+  return usdFormatter.format(value);
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return "N/A";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString();
+}
+
+function textValue(value: string | null | undefined) {
+  if (!value || value.trim().length === 0) return "N/A";
+  return value;
+}
+
+function formatBytes(value: number | null | undefined) {
+  if (typeof value !== "number" || value < 0) return "N/A";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof Error)) {
+    return fallback;
+  }
+
+  try {
+    const parsed = JSON.parse(error.message) as {
+      message?: string;
+      error?: string;
+    };
+
+    if (typeof parsed.message === "string" && parsed.message.length > 0) {
+      return parsed.message;
+    }
+
+    if (typeof parsed.error === "string" && parsed.error.length > 0) {
+      return parsed.error;
+    }
+  } catch {
+    return error.message || fallback;
+  }
+
+  return error.message || fallback;
+}
+
+const DOCUMENT_TYPE_OPTIONS = [
+  "INVOICE",
+  "CONTRACT",
+  "AUTHORIZATION",
+  "ITEMIZATION",
+  "PROOF_OF_SERVICE",
+  "CORRESPONDENCE",
+  "OTHER",
+] as const;
+
+export default function ClaimDetailPage() {
+  const params = useParams();
+  const idParam = params?.id;
+  const claimId = Array.isArray(idParam) ? idParam[0] : idParam;
+
+  const { token, isReady, isAuthenticated } = useAuthSession();
+  const queryClient = useQueryClient();
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [documentType, setDocumentType] =
+    useState<(typeof DOCUMENT_TYPE_OPTIONS)[number]>("INVOICE");
+
+  const claimQuery = useQuery({
+    queryKey: ["provider-claim", claimId, token],
+    queryFn: () => {
+      if (!token) {
+        throw new Error("You must be logged in to view claim details.");
+      }
+      if (!claimId) {
+        throw new Error("Missing claim id.");
+      }
+      return getClaimById(claimId, token);
+    },
+    enabled: isReady && isAuthenticated && Boolean(token) && Boolean(claimId),
+  });
+
+  const documentsQuery = useQuery({
+    queryKey: ["provider-claim-documents", claimId, token],
+    queryFn: () => {
+      if (!token) {
+        throw new Error("You must be logged in to view claim documents.");
+      }
+      if (!claimId) {
+        throw new Error("Missing claim id.");
+      }
+      return listClaimDocuments(token, claimId);
+    },
+    enabled: isReady && isAuthenticated && Boolean(token) && Boolean(claimId),
+  });
+
+  const uploadDocumentMutation = useMutation({
+    mutationFn: async () => {
+      if (!token) {
+        throw new Error("You must be logged in to upload documents.");
+      }
+      if (!claimId) {
+        throw new Error("Missing claim id.");
+      }
+      if (!selectedFile) {
+        throw new Error("Please choose a file to upload.");
+      }
+
+      return uploadClaimDocument(token, {
+        claimId,
+        file: selectedFile,
+        documentType,
+      });
+    },
+    onSuccess: async () => {
+      toast.success("Document uploaded successfully.");
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      await queryClient.invalidateQueries({
+        queryKey: ["provider-claim-documents", claimId, token],
+      });
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, "Document upload failed."));
+    },
+  });
+
+  const handleUploadSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await uploadDocumentMutation.mutateAsync();
+  };
+
+  return (
+    <main className="min-h-screen px-6 py-10">
+      <div className="mx-auto w-full max-w-4xl space-y-6">
+        <header className="space-y-2">
+          <h1 className="text-3xl font-semibold">Claim Details</h1>
+          <p className="text-sm text-gray-600">Claim ID: {claimId ?? "N/A"}</p>
+        </header>
+
+        {!isReady ? (
+          <div className="rounded-lg border p-4 text-sm text-gray-600">
+            Loading session...
+          </div>
+        ) : !isAuthenticated || !token ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            You must be logged in to view claim details.
+          </div>
+        ) : !claimId ? (
+          <div className="rounded-lg border p-4 text-sm text-gray-600">
+            Claim not found.
+          </div>
+        ) : claimQuery.isPending ? (
+          <div className="rounded-lg border p-4 text-sm text-gray-600">
+            Loading claim details...
+          </div>
+        ) : claimQuery.isError ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {getErrorMessage(claimQuery.error, "Unable to load claim details.")}
+          </div>
+        ) : !claimQuery.data ? (
+          <div className="rounded-lg border p-4 text-sm text-gray-600">
+            Claim not found.
+          </div>
+        ) : (
+          <section className="space-y-3">
+            <div className="rounded-lg border p-4">
+              <h2 className="text-lg font-semibold">Summary</h2>
+              <div className="mt-2 grid gap-2 text-sm">
+                <p>Claim Type: {textValue(claimQuery.data.claimType)}</p>
+                <p>Debt Type: {textValue(claimQuery.data.debtType)}</p>
+                <p>
+                  Jurisdiction: {textValue(claimQuery.data.jurisdictionState)}
+                </p>
+                <p>Date of Default: {formatDate(claimQuery.data.dateOfDefault)}</p>
+                <p>Date of Service: {formatDate(claimQuery.data.dateOfService)}</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-4">
+              <h2 className="text-lg font-semibold">Status</h2>
+              <div className="mt-2 grid gap-2 text-sm">
+                <p>Status: {formatStatus(claimQuery.data.status)}</p>
+                <p>
+                  Dispute Status: {textValue(claimQuery.data.disputeStatus)}
+                </p>
+                <p>Submitted At: {formatDate(claimQuery.data.submittedAt)}</p>
+                <p>Submitted By: {textValue(claimQuery.data.submittedBy)}</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-4">
+              <h2 className="text-lg font-semibold">Financial Details</h2>
+              <div className="mt-2 grid gap-2 text-sm">
+                <p>
+                  Current Amount: {formatCurrency(claimQuery.data.currentAmount)}
+                </p>
+                <p>
+                  Original Amount: {formatCurrency(claimQuery.data.originalAmount)}
+                </p>
+                <p>Amount: {formatCurrency(claimQuery.data.amount)}</p>
+                <p>
+                  Last Payment Date: {formatDate(claimQuery.data.lastPaymentDate)}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-4">
+              <h2 className="text-lg font-semibold">Client / Debtor Details</h2>
+              <div className="mt-2 grid gap-2 text-sm">
+                <p>Client Name: {textValue(claimQuery.data.clientName)}</p>
+                <p>Client Contact: {textValue(claimQuery.data.clientContact)}</p>
+                <p>Client Address: {textValue(claimQuery.data.clientAddress)}</p>
+                <p>Debtor Name: {textValue(claimQuery.data.debtorName)}</p>
+                <p>Debtor Email: {textValue(claimQuery.data.debtorEmail)}</p>
+                <p>Debtor Phone: {textValue(claimQuery.data.debtorPhone)}</p>
+                <p>Debtor Address: {textValue(claimQuery.data.debtorAddress)}</p>
+                <p>Debtor Type: {textValue(claimQuery.data.debtorType)}</p>
+                <p>
+                  Contact History: {textValue(claimQuery.data.contactHistory)}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-4">
+              <h2 className="text-lg font-semibold">Score / Explainability</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Placeholder for scoring and explainability integrations.
+              </p>
+            </div>
+
+            <div className="rounded-lg border p-4">
+              <h2 className="text-lg font-semibold">Documents</h2>
+              <div className="mt-3 space-y-4">
+                <form onSubmit={handleUploadSubmit} className="space-y-3">
+                  <div>
+                    <label
+                      htmlFor="documentType"
+                      className="mb-1 block text-sm font-medium"
+                    >
+                      Document Type
+                    </label>
+                    <select
+                      id="documentType"
+                      value={documentType}
+                      onChange={(event) =>
+                        setDocumentType(
+                          event.target.value as (typeof DOCUMENT_TYPE_OPTIONS)[number]
+                        )
+                      }
+                      className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black"
+                    >
+                      {DOCUMENT_TYPE_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option.replaceAll("_", " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="documentFile" className="mb-1 block text-sm font-medium">
+                      File
+                    </label>
+                    <input
+                      id="documentFile"
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg,.txt"
+                      onChange={(event) => {
+                        setSelectedFile(event.target.files?.[0] ?? null);
+                      }}
+                      className="w-full rounded-md border px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={uploadDocumentMutation.isPending || !selectedFile}
+                    className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  >
+                    {uploadDocumentMutation.isPending
+                      ? "Uploading..."
+                      : "Upload Document"}
+                  </button>
+                </form>
+
+                <div>
+                  <h3 className="text-sm font-semibold">Uploaded Documents</h3>
+
+                  {documentsQuery.isPending ? (
+                    <p className="mt-2 text-sm text-gray-600">
+                      Loading documents...
+                    </p>
+                  ) : documentsQuery.isError ? (
+                    <p className="mt-2 text-sm text-red-600">
+                      {getErrorMessage(
+                        documentsQuery.error,
+                        "Unable to load documents."
+                      )}
+                    </p>
+                  ) : !documentsQuery.data || documentsQuery.data.length === 0 ? (
+                    <p className="mt-2 text-sm text-gray-600">
+                      No documents uploaded yet.
+                    </p>
+                  ) : (
+                    <ul className="mt-2 space-y-2">
+                      {documentsQuery.data.map((document) => (
+                        <li key={document.id} className="rounded-md border p-3 text-sm">
+                          <p className="font-medium">{textValue(document.filename)}</p>
+                          <p>Type: {formatStatus(document.documentType)}</p>
+                          <p>Status: {formatStatus(document.status)}</p>
+                          <p>
+                            Extraction: {formatStatus(document.extractionStatus)}
+                          </p>
+                          <p>Size: {formatBytes(document.sizeBytes)}</p>
+                          <p>Uploaded: {formatDate(document.createdAt)}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        <Link href="/provider/claims" className="inline-flex text-sm underline">
+          Back to My Claims
+        </Link>
+      </div>
+    </main>
+  );
+}
