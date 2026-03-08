@@ -435,8 +435,8 @@ public class ClaimService {
         dto.setLastPaymentDate(claim.getLastPaymentDate() != null ? claim.getLastPaymentDate().toString() : null);
         dto.setContractFileKey(claim.getContractFileKey());
         dto.setStatus(claim.getStatus() != null ? claim.getStatus().name() : null);
-        dto.setSubmittedAt(claim.getSubmittedAt().toString());
-        dto.setSubmittedBy(claim.getUser().getName());
+        dto.setSubmittedAt(claim.getSubmittedAt() != null ? claim.getSubmittedAt().toString() : null);
+        dto.setSubmittedBy(claim.getUser() != null ? claim.getUser().getName() : null);
 
         return dto;
     }

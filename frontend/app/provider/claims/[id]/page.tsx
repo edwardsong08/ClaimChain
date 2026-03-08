@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import { getClaimById } from "@/services/claims";
 import { listClaimDocuments, uploadClaimDocument } from "@/services/documents";
+import type { Claim } from "@/types/claims";
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -41,6 +42,103 @@ function formatBytes(value: number | null | undefined) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (typeof value !== "number") return "N/A";
+  const normalizedPercent = value <= 1 ? value * 100 : value;
+  const roundedPercent = Math.round(normalizedPercent * 10) / 10;
+  return `${roundedPercent}%`;
+}
+
+function extractStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function parseExplainabilityFactors(explainabilityJson: string | null | undefined) {
+  if (!explainabilityJson) return [];
+
+  try {
+    const parsed = JSON.parse(explainabilityJson) as {
+      contributions?: Array<{
+        reason?: string;
+        delta?: number;
+        ruleId?: string;
+      }>;
+      eligibleReasons?: string[];
+    };
+
+    const contributionItems = Array.isArray(parsed.contributions)
+      ? parsed.contributions
+          .map((item) => {
+            const reason =
+              typeof item.reason === "string" && item.reason.trim().length > 0
+                ? item.reason.trim()
+                : typeof item.ruleId === "string" && item.ruleId.trim().length > 0
+                  ? item.ruleId.trim()
+                  : null;
+
+            if (!reason) return null;
+
+            if (typeof item.delta === "number") {
+              const sign = item.delta >= 0 ? "+" : "";
+              return `${reason} (${sign}${item.delta})`;
+            }
+            return reason;
+          })
+          .filter((item): item is string => Boolean(item))
+      : [];
+
+    const eligibilityItems = extractStringArray(parsed.eligibleReasons);
+
+    return [...contributionItems, ...eligibilityItems];
+  } catch {
+    return [];
+  }
+}
+
+function getScoreBreakdownItems(claim: Claim) {
+  const rawItems = [
+    ...extractStringArray(claim.scoreBreakdown),
+    ...extractStringArray(claim.scoringFactors),
+    ...parseExplainabilityFactors(claim.explainabilityJson),
+  ];
+
+  const subscoreItems = [
+    {
+      label: "Enforceability",
+      value: claim.subscoreEnforceability,
+    },
+    {
+      label: "Documentation completeness",
+      value: claim.subscoreDocumentation,
+    },
+    {
+      label: "Collectability",
+      value: claim.subscoreCollectability,
+    },
+    {
+      label: "Operational risk",
+      value: claim.subscoreOperationalRisk,
+    },
+  ]
+    .filter((item) => typeof item.value === "number")
+    .map((item) => `${item.label}: ${item.value}`);
+
+  return Array.from(new Set([...rawItems, ...subscoreItems]));
+}
+
+function hasScoreData(claim: Claim) {
+  return (
+    typeof claim.scoreTotal === "number" ||
+    (typeof claim.grade === "string" && claim.grade.trim().length > 0) ||
+    typeof claim.extractionSuccessRate === "number"
+  );
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -250,10 +348,39 @@ export default function ClaimDetailPage() {
             </div>
 
             <div className="rounded-lg border p-4">
-              <h2 className="text-lg font-semibold">Score / Explainability</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                Placeholder for scoring and explainability integrations.
-              </p>
+              <h2 className="text-lg font-semibold">Claim Score</h2>
+              {hasScoreData(claimQuery.data) ? (
+                <>
+                  <div className="mt-2 grid gap-2 text-sm">
+                    <p>
+                      Score:{" "}
+                      {typeof claimQuery.data.scoreTotal === "number"
+                        ? claimQuery.data.scoreTotal
+                        : "N/A"}
+                    </p>
+                    <p>Grade: {textValue(claimQuery.data.grade)}</p>
+                    <p>
+                      Extraction Success:{" "}
+                      {formatPercent(claimQuery.data.extractionSuccessRate)}
+                    </p>
+                  </div>
+
+                  {getScoreBreakdownItems(claimQuery.data).length > 0 && (
+                    <div className="mt-4">
+                      <h3 className="text-sm font-semibold">Score Breakdown</h3>
+                      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                        {getScoreBreakdownItems(claimQuery.data).map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="mt-1 text-sm text-gray-600">
+                  Scoring pending. Scores are generated after claim review.
+                </p>
+              )}
             </div>
 
             <div className="rounded-lg border p-4">
