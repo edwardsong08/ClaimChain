@@ -22,11 +22,17 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 
 @Configuration
 @EnableMethodSecurity(prePostEnabled = true) // ✅ Explicitly enable method-level security
 public class SecurityConfig {
+
+    private static final List<String> LOCAL_DEV_ALLOWED_ORIGINS = List.of(
+            "http://localhost:3000",
+            "http://127.0.0.1:3000"
+    );
 
     private final CorsProperties corsProperties;
     private final RequestIdFilter requestIdFilter;
@@ -59,6 +65,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/webhooks/stripe").permitAll()
                 .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/buyer/**").hasRole("COLLECTION_AGENCY")
                 .anyRequest().authenticated() // 🔒 protect all other routes
             )
@@ -94,7 +101,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(corsProperties.getAllowedOrigins());
+        config.setAllowedOrigins(resolveAllowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key", "Stripe-Signature", "X-Request-Id"));
         config.setExposedHeaders(List.of("X-Request-Id"));
@@ -103,6 +110,23 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
+    }
+
+    private List<String> resolveAllowedOrigins() {
+        LinkedHashSet<String> resolvedOrigins = new LinkedHashSet<>(LOCAL_DEV_ALLOWED_ORIGINS);
+
+        List<String> configuredOrigins = corsProperties.getAllowedOrigins();
+        if (configuredOrigins != null) {
+            for (String origin : configuredOrigins) {
+                if (origin == null) continue;
+                String trimmedOrigin = origin.trim();
+                if (!trimmedOrigin.isEmpty()) {
+                    resolvedOrigins.add(trimmedOrigin);
+                }
+            }
+        }
+
+        return List.copyOf(resolvedOrigins);
     }
 
     @Bean
