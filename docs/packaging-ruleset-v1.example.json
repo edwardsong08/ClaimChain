@@ -3,7 +3,7 @@
   "eligibility": {
     "minScore": 55,
     "minGrade": "C",
-    "requiredDocTypes": ["INVOICE", "CONTRACT"],
+    "requiredDocTypes": [],
     "minExtractionSuccessRate": 0.6,
     "excludeDisputeStatuses": ["ACTIVE"]
   },

@@ -152,24 +152,7 @@ public class ScoringEngine {
     }
 
     private boolean isReadyForAutoScoring(List<ClaimDocument> documents, ScoringRulesetConfig config) {
-        if (documents == null || documents.isEmpty()) {
-            return false;
-        }
-
-        ScoringRulesetConfig.EligibilityConfig eligibility = config.getEligibility();
-        Set<String> requiredDocTypes = normalizeStringSet(eligibility == null ? null : eligibility.getRequiredDocTypes());
-        Set<String> presentDocTypes = collectPresentDocTypes(documents);
-
-        if (!presentDocTypes.containsAll(requiredDocTypes)) {
-            return false;
-        }
-
-        double extractionSuccessRate = computeExtractionSuccessRate(documents);
-        double minExtractionSuccessRate = eligibility == null || eligibility.getMinExtractionSuccessRate() == null
-                ? 0d
-                : eligibility.getMinExtractionSuccessRate();
-
-        return extractionSuccessRate >= minExtractionSuccessRate;
+        return true;
     }
 
     private ScoreComputation evaluate(
@@ -192,9 +175,6 @@ public class ScoringEngine {
         Set<String> requiredDocTypes = normalizeStringSet(eligibility == null ? null : eligibility.getRequiredDocTypes());
         Set<String> missingDocTypes = new LinkedHashSet<>(requiredDocTypes);
         missingDocTypes.removeAll(metrics.presentDocTypes());
-        if (!missingDocTypes.isEmpty()) {
-            eligibilityFailures.add("Missing required document types: " + String.join(", ", missingDocTypes) + ".");
-        }
 
         double minExtractionSuccessRate = eligibility == null || eligibility.getMinExtractionSuccessRate() == null
                 ? 0d

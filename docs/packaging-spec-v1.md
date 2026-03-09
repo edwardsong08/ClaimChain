@@ -32,13 +32,15 @@ A claim is eligible for packaging only if:
 2) Claim has a **current score** (latest `claim_scores.scored_at`)
 3) Score meets thresholds:
    - `minScore` and/or `minGrade` from the ACTIVE PACKAGING ruleset
-4) Required doc types are present:
-   - ALL `requiredDocTypes` exist among claim documents
-5) Extraction readiness is met:
+4) Primary proof document is present (MVP rule):
+   - at least one of `INVOICE` or `CONTRACT`
+5) Additional required doc types are present:
+   - ALL configured `requiredDocTypes` (excluding `INVOICE`/`CONTRACT`) exist among claim documents
+6) Extraction readiness is met:
    - `extractionSuccessRate >= minExtractionSuccessRate`
-6) Dispute exclusions:
+7) Dispute exclusions:
    - claim’s `disputeStatus` must NOT be in `excludeDisputeStatuses`
-7) Claim is not already packaged (no duplicates), unless later rules explicitly allow it
+8) Claim is not already packaged (no duplicates), unless later rules explicitly allow it
 
 If any hard gate fails, the claim is excluded from the candidate pool.
 
@@ -105,7 +107,7 @@ Packaging must be explainable:
 For every claim included in a package, store an `included_reason_json` payload with at least:
 - `scoreTotal`, `grade`
 - eligibility thresholds used (`minScore`, `minGrade`)
-- doc readiness summary (required docs present, extraction success rate)
+- doc readiness summary (primary proof present, additional required docs present, extraction success rate)
 - constraint checks (jurisdiction/debtorType buckets at time of inclusion)
 - `packagingRulesetId`, `packagingRulesetVersion`
 
@@ -141,7 +143,7 @@ See: `docs/packaging-ruleset-v1.example.json`
 - `schemaVersion` (int)
 - `eligibility` (object):
   - `minScore` (int 0..100) and/or `minGrade` (string)
-  - `requiredDocTypes` (array)
+  - `requiredDocTypes` (array, for additional AND-style docs; MVP primary proof is enforced as `INVOICE` OR `CONTRACT` in service logic)
   - `minExtractionSuccessRate` (float 0..1)
   - `excludeDisputeStatuses` (array of strings)
 - `packageSizing` (object):
@@ -153,6 +155,8 @@ See: `docs/packaging-ruleset-v1.example.json`
   - `mode`: `BEST_FIRST` or `BALANCED`
 
 Activation-time validation currently enforces basic eligibility and sizing sanity checks; additional strict validation may be added later.
+
+TODO (future schema): support explicit OR-style document requirement groups directly in ruleset JSON (for example, `INVOICE` OR `CONTRACT`) instead of relying on MVP code logic.
 
 ---
 

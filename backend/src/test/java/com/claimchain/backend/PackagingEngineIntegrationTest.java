@@ -261,6 +261,89 @@ class PackagingEngineIntegrationTest {
     }
 
     @Test
+    void buildPackageDryRun_acceptsInvoiceOrContractPrimaryProof_andStillAppliesOtherEligibilityGates() throws Exception {
+        createPackagingRuleset(adminUser, 1, defaultPackagingConfig(2));
+
+        Claim invoiceOnlyEligible = createApprovedClaim("Invoice Eligible", new BigDecimal("700.00"), "NY", DebtorType.CONSUMER, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 1, 8, 0));
+        Claim contractOnlyEligible = createApprovedClaim("Contract Eligible", new BigDecimal("650.00"), "CA", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 2, 8, 0));
+        Claim belowScore = createApprovedClaim("Below Score", new BigDecimal("600.00"), "TX", DebtorType.CONSUMER, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 3, 8, 0));
+        Claim extractionBelowThreshold = createApprovedClaim("Extraction Below", new BigDecimal("550.00"), "WA", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 4, 8, 0));
+        Claim disputed = createApprovedClaim("Disputed", new BigDecimal("500.00"), "FL", DebtorType.CONSUMER, DisputeStatus.ACTIVE, LocalDateTime.of(2026, 2, 5, 8, 0));
+
+        createDocument(invoiceOnlyEligible, DocumentType.INVOICE, ExtractionStatus.SUCCEEDED);
+        createDocument(contractOnlyEligible, DocumentType.CONTRACT, ExtractionStatus.SUCCEEDED);
+        createDocument(belowScore, DocumentType.INVOICE, ExtractionStatus.SUCCEEDED);
+        createDocument(extractionBelowThreshold, DocumentType.INVOICE, ExtractionStatus.FAILED);
+        createDocument(disputed, DocumentType.CONTRACT, ExtractionStatus.SUCCEEDED);
+
+        recordScore(invoiceOnlyEligible, 95, "A");
+        recordScore(contractOnlyEligible, 90, "A");
+        recordScore(belowScore, 50, "F");
+        recordScore(extractionBelowThreshold, 88, "B");
+        recordScore(disputed, 92, "A");
+
+        MvcResult result = mockMvc.perform(
+                        post("/api/admin/packages/build")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "dryRun": true
+                                        }
+                                        """)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.dryRun").value(true))
+                .andExpect(jsonPath("$.buildable").value(true))
+                .andExpect(jsonPath("$.totalClaims").value(2))
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        List<Long> selectedClaimIds = new ArrayList<>();
+        body.get("claimIds").forEach(node -> selectedClaimIds.add(node.asLong()));
+
+        assertThat(selectedClaimIds).containsExactly(invoiceOnlyEligible.getId(), contractOnlyEligible.getId());
+        assertThat(selectedClaimIds).doesNotContain(
+                belowScore.getId(),
+                extractionBelowThreshold.getId(),
+                disputed.getId()
+        );
+    }
+
+    @Test
+    void dryRunRequiresInvoiceOrContractPrimaryProof_evenWhenOtherThresholdsPass() throws Exception {
+        createPackagingRuleset(adminUser, 1, defaultPackagingConfig(1));
+
+        Claim noPrimaryProof = createApprovedClaim("No Primary Proof", new BigDecimal("1200.00"), "NY", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 1, 13, 0));
+        createDocument(noPrimaryProof, DocumentType.OTHER, ExtractionStatus.SUCCEEDED);
+        recordScore(noPrimaryProof, 90, "A");
+
+        MvcResult result = mockMvc.perform(
+                        post("/api/admin/packages/build")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "dryRun": true
+                                        }
+                                        """)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.dryRun").value(true))
+                .andExpect(jsonPath("$.buildable").value(false))
+                .andExpect(jsonPath("$.totalClaims").value(0))
+                .andExpect(jsonPath("$.failureReasons").isArray())
+                .andExpect(jsonPath("$.failureReasons[0]").value(org.hamcrest.Matchers.containsString("minClaims")))
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(body.path("claimIds").isArray()).isTrue();
+        assertThat(body.path("claimIds").size()).isZero();
+    }
+
+    @Test
     void dryRunReturns200WithBuildableFalseWhenConstraintsCannotBeMet_withoutPersisting() throws Exception {
         createPackagingRuleset(adminUser, 1, defaultPackagingConfig(4));
 

@@ -2,6 +2,9 @@ import { apiFetch } from "./api";
 import type {
   AdminClaim,
   AdminClaimDecisionRequest,
+  AdminPackage,
+  AdminPackageBuildResponse,
+  AdminPackageDetail,
   AdminClaimStatus,
   AdminPendingUser,
   AdminSubmittedClaim,
@@ -51,6 +54,70 @@ export function listApprovedClaims(token: string) {
 
 export function listRejectedClaims(token: string) {
   return listClaimsByStatus(token, "REJECTED");
+}
+
+export function listAdminPackages(token: string) {
+  return apiFetch("/api/admin/packages", {
+    method: "GET",
+    headers: getAuthHeaders(token),
+  }) as Promise<AdminPackage[]>;
+}
+
+export function getAdminPackageDetail(token: string, packageId: number | string) {
+  return apiFetch(`/api/admin/packages/${packageId}`, {
+    method: "GET",
+    headers: getAuthHeaders(token),
+  }) as Promise<AdminPackageDetail>;
+}
+
+export function previewPackageBuild(token: string, notes?: string) {
+  const payload = {
+    dryRun: true,
+    notes,
+  };
+
+  return apiFetch("/api/admin/packages/build", {
+    method: "POST",
+    headers: getJsonAuthHeaders(token),
+    body: JSON.stringify(payload),
+  }) as Promise<AdminPackageBuildResponse>;
+}
+
+export function createPackage(token: string, notes?: string) {
+  const payload = {
+    dryRun: false,
+    notes,
+  };
+
+  return apiFetch("/api/admin/packages/build", {
+    method: "POST",
+    headers: getJsonAuthHeaders(token),
+    body: JSON.stringify(payload),
+  }) as Promise<AdminPackageBuildResponse>;
+}
+
+export async function listPackage(packageId: number | string, token: string) {
+  const response = await fetch(`${API_BASE}/api/admin/packages/${packageId}/list`, {
+    method: "POST",
+    headers: getAuthHeaders(token),
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(responseText || "Unable to list package.");
+  }
+}
+
+export async function unlistPackage(packageId: number | string, token: string) {
+  const response = await fetch(`${API_BASE}/api/admin/packages/${packageId}/unlist`, {
+    method: "POST",
+    headers: getAuthHeaders(token),
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(responseText || "Unable to unlist package.");
+  }
 }
 
 export function getAdminClaimById(token: string, claimId: string) {

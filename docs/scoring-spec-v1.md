@@ -45,6 +45,7 @@ A claim is eligible for authoritative scoring if:
 2) If the active ruleset blocks active disputes, `disputeStatus != ACTIVE`
 
 Missing documents, weak extraction, incomplete metadata, or sparse supporting information do **not** prevent score creation. Instead, those conditions must be reflected through lower subscores, lower total score, and explainability output.
+For primary proof docs, invoice-only claims and contract-only claims are both valid for scoring (no universal hard requirement that both be present).
 
 If a claim is ineligible under the minimal gates above:
 - persist a score run with `eligible=false`, `scoreTotal=0`, `grade="F"`

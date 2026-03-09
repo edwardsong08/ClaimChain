@@ -44,6 +44,7 @@ public class PackageService {
 
     private static final double EPSILON = 1e-9d;
     private static final String DEFAULT_BUCKET = "UNKNOWN";
+    private static final Set<String> PRIMARY_PROOF_DOC_TYPES = Set.of("INVOICE", "CONTRACT");
 
     private final PackageRepository packageRepository;
     private final PackageClaimRepository packageClaimRepository;
@@ -540,7 +541,7 @@ public class PackageService {
                     extractionSucceededCount++;
                 }
             }
-            boolean requiredDocsPresent = availableDocTypes.containsAll(context.requiredDocTypes);
+            boolean requiredDocsPresent = hasRequiredPackagingDocuments(availableDocTypes, context.requiredDocTypes);
             if (!requiredDocsPresent) {
                 continue;
             }
@@ -575,6 +576,27 @@ public class PackageService {
                         .thenComparing(c -> c.claim.getId(), Comparator.nullsLast(Comparator.naturalOrder()))
         );
         return candidates;
+    }
+
+    private boolean hasRequiredPackagingDocuments(Set<String> availableDocTypes, Set<String> requiredDocTypes) {
+        if (!hasPrimaryProofDocument(availableDocTypes)) {
+            return false;
+        }
+        if (requiredDocTypes == null || requiredDocTypes.isEmpty()) {
+            return true;
+        }
+        Set<String> additionalRequiredDocTypes = new HashSet<>(requiredDocTypes);
+        additionalRequiredDocTypes.removeAll(PRIMARY_PROOF_DOC_TYPES);
+        return availableDocTypes.containsAll(additionalRequiredDocTypes);
+    }
+
+    private boolean hasPrimaryProofDocument(Set<String> availableDocTypes) {
+        for (String primaryDocType : PRIMARY_PROOF_DOC_TYPES) {
+            if (availableDocTypes.contains(primaryDocType)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private SelectionOutcome selectCandidates(List<CandidateClaim> candidates, PackagingRuleContext context) {

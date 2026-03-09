@@ -237,6 +237,19 @@ export default function AdminDashboardPage() {
         ) : (
           <>
             <section className="space-y-3 rounded-lg border p-5">
+              <h2 className="text-xl font-semibold">Package Management</h2>
+              <p className="text-sm text-gray-600">
+                Build, preview, list, and unlist claim packages.
+              </p>
+              <Link
+                href="/admin/packages"
+                className="inline-flex rounded-md border px-3 py-1.5 text-sm font-medium"
+              >
+                Manage Packages
+              </Link>
+            </section>
+
+            <section className="space-y-3 rounded-lg border p-5">
               <h2 className="text-xl font-semibold">Pending User Verification</h2>
 
               {pendingUsersQuery.isPending ? (

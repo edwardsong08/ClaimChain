@@ -197,6 +197,112 @@ class ScoringEngineUnitTest {
     }
 
     @Test
+    void scoreClaim_allowsInvoiceOnlyClaimWhenEligibilityDocsAreConfigured() {
+        Long claimId = 207L;
+        Claim claim = buildApprovedClaim(claimId, DisputeStatus.NONE, new BigDecimal("2500.00"));
+        List<ClaimDocument> documents = List.of(buildDocument(DocumentType.INVOICE, ExtractionStatus.SUCCEEDED));
+        Ruleset ruleset = buildActiveRuleset(27L, 2, validScoringConfigV1());
+
+        when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
+        when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(documents);
+        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+                .thenReturn(Optional.of(ruleset));
+        when(claimScoringPersistenceService.recordScoreRun(
+                eq(claimId),
+                eq(27L),
+                eq(2),
+                anyBoolean(),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(17L),
+                eq(ScoringTrigger.APPROVAL)
+        )).thenAnswer(invocation -> null);
+
+        scoringEngine.scoreClaim(claimId, 17L, false);
+
+        ArgumentCaptor<Boolean> eligibleCaptor = ArgumentCaptor.forClass(Boolean.class);
+        ArgumentCaptor<Integer> scoreCaptor = ArgumentCaptor.forClass(Integer.class);
+        verify(claimScoringPersistenceService).recordScoreRun(
+                eq(claimId),
+                eq(27L),
+                eq(2),
+                eligibleCaptor.capture(),
+                scoreCaptor.capture(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(17L),
+                eq(ScoringTrigger.APPROVAL)
+        );
+
+        assertThat(eligibleCaptor.getValue()).isTrue();
+        assertThat(scoreCaptor.getValue()).isGreaterThan(0);
+    }
+
+    @Test
+    void scoreClaim_allowsContractOnlyClaimWhenEligibilityDocsAreConfigured() {
+        Long claimId = 208L;
+        Claim claim = buildApprovedClaim(claimId, DisputeStatus.NONE, new BigDecimal("2500.00"));
+        List<ClaimDocument> documents = List.of(buildDocument(DocumentType.CONTRACT, ExtractionStatus.SUCCEEDED));
+        Ruleset ruleset = buildActiveRuleset(28L, 2, validScoringConfigV1());
+
+        when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
+        when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(documents);
+        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+                .thenReturn(Optional.of(ruleset));
+        when(claimScoringPersistenceService.recordScoreRun(
+                eq(claimId),
+                eq(28L),
+                eq(2),
+                anyBoolean(),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(18L),
+                eq(ScoringTrigger.APPROVAL)
+        )).thenAnswer(invocation -> null);
+
+        scoringEngine.scoreClaim(claimId, 18L, false);
+
+        ArgumentCaptor<Boolean> eligibleCaptor = ArgumentCaptor.forClass(Boolean.class);
+        ArgumentCaptor<Integer> scoreCaptor = ArgumentCaptor.forClass(Integer.class);
+        verify(claimScoringPersistenceService).recordScoreRun(
+                eq(claimId),
+                eq(28L),
+                eq(2),
+                eligibleCaptor.capture(),
+                scoreCaptor.capture(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(18L),
+                eq(ScoringTrigger.APPROVAL)
+        );
+
+        assertThat(eligibleCaptor.getValue()).isTrue();
+        assertThat(scoreCaptor.getValue()).isGreaterThan(0);
+    }
+
+    @Test
     void scoreClaim_marksIneligibleClaimAsZeroAndF() throws Exception {
         Long claimId = 303L;
         Claim claim = buildApprovedClaim(claimId, DisputeStatus.ACTIVE, new BigDecimal("2000.00"));
