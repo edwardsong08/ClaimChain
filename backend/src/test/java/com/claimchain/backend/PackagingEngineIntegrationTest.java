@@ -226,8 +226,8 @@ class PackagingEngineIntegrationTest {
     void buildPackageDryRunPreviewsSelection_withoutPersistingOrFreezingClaims() throws Exception {
         createPackagingRuleset(adminUser, 1, defaultPackagingConfig(2));
 
-        Claim c1 = createApprovedClaim("Dry Run One", new BigDecimal("400.00"), "NY", DebtorType.CONSUMER, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 1, 9, 0));
-        Claim c2 = createApprovedClaim("Dry Run Two", new BigDecimal("300.00"), "CA", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 2, 9, 0));
+        Claim c1 = createApprovedClaim("Dry Run One", new BigDecimal("700.00"), "NY", DebtorType.CONSUMER, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 1, 9, 0));
+        Claim c2 = createApprovedClaim("Dry Run Two", new BigDecimal("650.00"), "CA", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 2, 9, 0));
 
         addSuccessfulRequiredDocuments(c1);
         addSuccessfulRequiredDocuments(c2);
@@ -347,9 +347,9 @@ class PackagingEngineIntegrationTest {
     void dryRunReturns200WithBuildableFalseWhenConstraintsCannotBeMet_withoutPersisting() throws Exception {
         createPackagingRuleset(adminUser, 1, defaultPackagingConfig(4));
 
-        Claim c1 = createApprovedClaim("Dry Run Fail One", new BigDecimal("450.00"), "NY", DebtorType.CONSUMER, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 1, 12, 0));
-        Claim c2 = createApprovedClaim("Dry Run Fail Two", new BigDecimal("350.00"), "CA", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 2, 12, 0));
-        Claim c3 = createApprovedClaim("Dry Run Fail Three", new BigDecimal("300.00"), "TX", DebtorType.CONSUMER, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 3, 12, 0));
+        Claim c1 = createApprovedClaim("Dry Run Fail One", new BigDecimal("750.00"), "NY", DebtorType.CONSUMER, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 1, 12, 0));
+        Claim c2 = createApprovedClaim("Dry Run Fail Two", new BigDecimal("650.00"), "CA", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 2, 12, 0));
+        Claim c3 = createApprovedClaim("Dry Run Fail Three", new BigDecimal("600.00"), "TX", DebtorType.CONSUMER, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 3, 12, 0));
 
         addSuccessfulRequiredDocuments(c1);
         addSuccessfulRequiredDocuments(c2);
@@ -437,6 +437,50 @@ class PackagingEngineIntegrationTest {
         ApiErrorResponse error = objectMapper.readValue(result.getResponse().getContentAsString(), ApiErrorResponse.class);
         assertThat(error.getCode()).isEqualTo("FORBIDDEN");
         assertThat(error.getRequestId()).isNotBlank();
+    }
+
+    @Test
+    void dryRun_excludesLowBalanceUnknownJurisdictionAndNoDocClaims_evenWithHighScores() throws Exception {
+        createPackagingRuleset(adminUser, 1, defaultPackagingConfig(1));
+
+        Claim eligible = createApprovedClaim("Eligible", new BigDecimal("1200.00"), "NY", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 1, 14, 0));
+        Claim lowBalance = createApprovedClaim("Low Balance", new BigDecimal("450.00"), "CA", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 2, 14, 0));
+        Claim unknownJurisdiction = createApprovedClaim("Unknown Jurisdiction", new BigDecimal("900.00"), "UNKNOWN", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 3, 14, 0));
+        Claim noDocs = createApprovedClaim("No Docs", new BigDecimal("900.00"), "TX", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 4, 14, 0));
+
+        createDocument(eligible, DocumentType.INVOICE, ExtractionStatus.SUCCEEDED);
+        createDocument(lowBalance, DocumentType.INVOICE, ExtractionStatus.SUCCEEDED);
+        createDocument(unknownJurisdiction, DocumentType.INVOICE, ExtractionStatus.SUCCEEDED);
+
+        recordScore(eligible, 82, "B");
+        recordScore(lowBalance, 95, "A");
+        recordScore(unknownJurisdiction, 95, "A");
+        recordScore(noDocs, 95, "A");
+
+        MvcResult result = mockMvc.perform(
+                        post("/api/admin/packages/build")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "dryRun": true
+                                        }
+                                        """)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.dryRun").value(true))
+                .andExpect(jsonPath("$.buildable").value(true))
+                .andExpect(jsonPath("$.totalClaims").value(1))
+                .andExpect(jsonPath("$.claimIds[0]").value(eligible.getId()))
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        List<Long> selectedClaimIds = new ArrayList<>();
+        body.get("claimIds").forEach(node -> selectedClaimIds.add(node.asLong()));
+
+        assertThat(selectedClaimIds).containsExactly(eligible.getId());
+        assertThat(selectedClaimIds).doesNotContain(lowBalance.getId(), unknownJurisdiction.getId(), noDocs.getId());
     }
 
     private Ruleset createScoringRuleset(User createdBy) {
@@ -554,10 +598,12 @@ class PackagingEngineIntegrationTest {
                 {
                   "schemaVersion": 1,
                   "eligibility": {
-                    "minScore": 60,
-                    "minGrade": "C",
+                    "minScore": 50,
+                    "minGrade": "D",
+                    "minBalance": 500,
+                    "requireJurisdictionKnown": true,
                     "requiredDocTypes": ["INVOICE", "CONTRACT"],
-                    "minExtractionSuccessRate": 1.0,
+                    "minExtractionSuccessRate": 0.6,
                     "excludeDisputeStatuses": ["ACTIVE"]
                   },
                   "packageSizing": {

@@ -58,6 +58,8 @@ public class PackagingRulesetConfig {
     public static class Eligibility {
         private Integer minScore;
         private String minGrade;
+        private BigDecimal minBalance;
+        private Boolean requireJurisdictionKnown;
         private List<String> requiredDocTypes;
         private Double minExtractionSuccessRate;
         private List<String> excludeDisputeStatuses;
@@ -76,6 +78,22 @@ public class PackagingRulesetConfig {
 
         public void setMinGrade(String minGrade) {
             this.minGrade = minGrade;
+        }
+
+        public BigDecimal getMinBalance() {
+            return minBalance;
+        }
+
+        public void setMinBalance(BigDecimal minBalance) {
+            this.minBalance = minBalance;
+        }
+
+        public Boolean getRequireJurisdictionKnown() {
+            return requireJurisdictionKnown;
+        }
+
+        public void setRequireJurisdictionKnown(Boolean requireJurisdictionKnown) {
+            this.requireJurisdictionKnown = requireJurisdictionKnown;
         }
 
         public List<String> getRequiredDocTypes() {

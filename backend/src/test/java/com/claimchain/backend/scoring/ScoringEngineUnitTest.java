@@ -501,6 +501,85 @@ class ScoringEngineUnitTest {
     }
 
     @Test
+    void scoreClaim_docReadyCommercialInvoiceEvidence_landsInViableBandAndAboveComparableNoDocCase() {
+        Long docReadyClaimId = 213L;
+        Long noDocApprovalClaimId = 214L;
+        Claim docReadyClaim = buildApprovedClaim(docReadyClaimId, DisputeStatus.NONE, new BigDecimal("1400.00"));
+        Claim noDocClaim = buildApprovedClaim(noDocApprovalClaimId, DisputeStatus.NONE, new BigDecimal("1400.00"));
+
+        List<ClaimDocument> docReadyDocuments = List.of(
+                buildDocument(DocumentType.INVOICE, ExtractionStatus.SUCCEEDED, 180),
+                buildDocument(DocumentType.CONTRACT, ExtractionStatus.SUCCEEDED, 140)
+        );
+        Ruleset ruleset = buildActiveRuleset(34L, 4, businessBandCalibrationConfig());
+
+        when(claimRepository.findById(docReadyClaimId)).thenReturn(Optional.of(docReadyClaim));
+        when(claimRepository.findById(noDocApprovalClaimId)).thenReturn(Optional.of(noDocClaim));
+        when(claimDocumentRepository.findByClaimId(docReadyClaimId)).thenReturn(docReadyDocuments);
+        when(claimDocumentRepository.findByClaimId(noDocApprovalClaimId)).thenReturn(List.of());
+        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+                .thenReturn(Optional.of(ruleset));
+        when(claimScoringPersistenceService.recordScoreRun(
+                any(),
+                eq(34L),
+                eq(4),
+                anyBoolean(),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                isNull(),
+                any()
+        )).thenAnswer(invocation -> null);
+
+        scoringEngine.scoreClaim(docReadyClaimId, null, false, ScoringTrigger.DOC_READY);
+        scoringEngine.scoreClaim(noDocApprovalClaimId, null, false, ScoringTrigger.APPROVAL);
+
+        ArgumentCaptor<Long> claimIdCaptor = ArgumentCaptor.forClass(Long.class);
+        ArgumentCaptor<Integer> scoreCaptor = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<String> gradeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(claimScoringPersistenceService, times(2)).recordScoreRun(
+                claimIdCaptor.capture(),
+                eq(34L),
+                eq(4),
+                eq(true),
+                scoreCaptor.capture(),
+                gradeCaptor.capture(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                isNull(),
+                any()
+        );
+
+        Integer docReadyScore = null;
+        Integer noDocScore = null;
+        String docReadyGrade = null;
+        for (int i = 0; i < claimIdCaptor.getAllValues().size(); i++) {
+            Long persistedClaimId = claimIdCaptor.getAllValues().get(i);
+            if (docReadyClaimId.equals(persistedClaimId)) {
+                docReadyScore = scoreCaptor.getAllValues().get(i);
+                docReadyGrade = gradeCaptor.getAllValues().get(i);
+            } else if (noDocApprovalClaimId.equals(persistedClaimId)) {
+                noDocScore = scoreCaptor.getAllValues().get(i);
+            }
+        }
+
+        assertThat(docReadyScore).isNotNull();
+        assertThat(noDocScore).isNotNull();
+        assertThat(docReadyScore).isGreaterThan(noDocScore);
+        assertThat(docReadyScore).isGreaterThanOrEqualTo(45);
+        assertThat(List.of("A", "B", "C")).contains(docReadyGrade);
+    }
+
+    @Test
     void scoreClaim_marksIneligibleClaimAsZeroAndF() throws Exception {
         Long claimId = 303L;
         Claim claim = buildApprovedClaim(claimId, DisputeStatus.ACTIVE, new BigDecimal("2000.00"));
@@ -755,6 +834,46 @@ class ScoringEngineUnitTest {
                   },
                   "rules": [
                     {"id":"GRADE_RULE","group":"enforceability","when":{"jurisdictionKnown":true},"points":72,"reason":"Grade threshold rule"}
+                  ]
+                }
+                """;
+    }
+
+    private String businessBandCalibrationConfig() {
+        return """
+                {
+                  "eligibility": {
+                    "requiredClaimStatus": "APPROVED",
+                    "requiredDocTypes": [],
+                    "minExtractionSuccessRate": 0.0,
+                    "blockActiveDisputes": false
+                  },
+                  "weights": {
+                    "enforceability": 0.35,
+                    "documentation": 0.30,
+                    "collectability": 0.25,
+                    "operationalRisk": 0.10
+                  },
+                  "gradeBands": [
+                    {"grade":"A","minScore":75},
+                    {"grade":"B","minScore":60},
+                    {"grade":"C","minScore":45},
+                    {"grade":"D","minScore":30},
+                    {"grade":"F","minScore":0}
+                  ],
+                  "caps": {
+                    "enforceabilityMax": 100,
+                    "documentationMax": 100,
+                    "collectabilityMax": 100,
+                    "operationalRiskMax": 100
+                  },
+                  "rules": [
+                    {"id":"JURISDICTION_KNOWN","group":"enforceability","when":{"jurisdictionKnown":true},"points":8,"reason":"Jurisdiction provided"},
+                    {"id":"DEBT_AGE_RECENT","group":"enforceability","when":{"debtAgeDaysLte":365},"points":7,"reason":"Recent debt"},
+                    {"id":"EXTRACTION_SUCCESS_HIGH","group":"documentation","when":{"extractionSuccessRateGte":0.8},"points":8,"reason":"Extraction healthy"},
+                    {"id":"DEBTOR_BUSINESS","group":"collectability","when":{"debtorTypeEquals":"BUSINESS"},"points":6,"reason":"Business debtor"},
+                    {"id":"AMOUNT_MID","group":"collectability","when":{"currentAmountBetween":[500,5000]},"points":5,"reason":"Commercial balance range"},
+                    {"id":"DOC_COUNT_BASE","group":"operationalRisk","when":{"docCountGte":2},"points":3,"reason":"Supporting document depth"}
                   ]
                 }
                 """;

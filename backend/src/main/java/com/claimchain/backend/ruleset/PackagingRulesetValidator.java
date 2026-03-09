@@ -83,6 +83,22 @@ public class PackagingRulesetValidator implements RulesetValidator {
             }
         }
 
+        JsonNode minBalanceNode = eligibility.get("minBalance");
+        if (minBalanceNode != null && !minBalanceNode.isNull()) {
+            if (!minBalanceNode.isNumber()) {
+                errors.add("eligibility.minBalance must be numeric.");
+            } else if (minBalanceNode.decimalValue().compareTo(java.math.BigDecimal.ZERO) < 0) {
+                errors.add("eligibility.minBalance must be >= 0.");
+            }
+        }
+
+        JsonNode requireJurisdictionKnownNode = eligibility.get("requireJurisdictionKnown");
+        if (requireJurisdictionKnownNode != null
+                && !requireJurisdictionKnownNode.isNull()
+                && !requireJurisdictionKnownNode.isBoolean()) {
+            errors.add("eligibility.requireJurisdictionKnown must be boolean.");
+        }
+
         if (!hasValidMinGrade && !hasValidMinScore) {
             errors.add("eligibility must include minGrade or minScore.");
         }

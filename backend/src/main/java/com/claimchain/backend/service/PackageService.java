@@ -45,6 +45,7 @@ public class PackageService {
     private static final double EPSILON = 1e-9d;
     private static final String DEFAULT_BUCKET = "UNKNOWN";
     private static final Set<String> PRIMARY_PROOF_DOC_TYPES = Set.of("INVOICE", "CONTRACT");
+    private static final BigDecimal DEFAULT_MIN_BALANCE = new BigDecimal("500.00");
 
     private final PackageRepository packageRepository;
     private final PackageClaimRepository packageClaimRepository;
@@ -493,10 +494,23 @@ public class PackageService {
             }
         }
 
+        BigDecimal minBalance = config.getEligibility().getMinBalance();
+        if (minBalance == null) {
+            minBalance = DEFAULT_MIN_BALANCE;
+        }
+        if (minBalance.compareTo(BigDecimal.ZERO) < 0) {
+            throw new PackageValidationException("PACKAGE_RULESET_INVALID", "eligibility.minBalance must be >= 0.");
+        }
+
+        boolean requireJurisdictionKnown = config.getEligibility().getRequireJurisdictionKnown() == null
+                || Boolean.TRUE.equals(config.getEligibility().getRequireJurisdictionKnown());
+
         PackagingRuleContext context = new PackagingRuleContext();
         context.minScore = minScore;
         context.minGrade = minGrade;
         context.minGradeRank = minGradeRank;
+        context.minBalance = minBalance;
+        context.requireJurisdictionKnown = requireJurisdictionKnown;
         context.requiredDocTypes = requiredDocTypes;
         context.minExtractionSuccessRate = minExtractionSuccessRate;
         context.excludedDisputeStatuses = excludedDisputeStatuses;
@@ -515,45 +529,14 @@ public class PackageService {
         List<Claim> approvedClaims = claimRepository.findByStatusOrderBySubmittedAtDesc(ClaimStatus.APPROVED);
 
         for (Claim claim : approvedClaims) {
-            if (claim.getStatus() == ClaimStatus.PACKAGED) {
-                continue;
-            }
-
             ClaimScore currentScore = claimScoreRepository.findFirstByClaimIdOrderByScoredAtDesc(claim.getId()).orElse(null);
             if (currentScore == null || currentScore.getScoreTotal() == null) {
                 continue;
             }
-            if (context.minScore != null && currentScore.getScoreTotal() < context.minScore) {
-                continue;
-            }
-            if (context.minGradeRank != null && gradeRankOrZero(currentScore.getGrade()) < context.minGradeRank) {
-                continue;
-            }
 
             List<ClaimDocument> documents = claimDocumentRepository.findByClaimId(claim.getId());
-            Set<String> availableDocTypes = new HashSet<>();
-            int extractionSucceededCount = 0;
-            for (ClaimDocument document : documents) {
-                if (document.getDocumentType() != null) {
-                    availableDocTypes.add(document.getDocumentType().name());
-                }
-                if (document.getExtractionStatus() == ExtractionStatus.SUCCEEDED) {
-                    extractionSucceededCount++;
-                }
-            }
-            boolean requiredDocsPresent = hasRequiredPackagingDocuments(availableDocTypes, context.requiredDocTypes);
-            if (!requiredDocsPresent) {
-                continue;
-            }
-
-            int totalDocs = documents.size();
-            double extractionSuccessRate = totalDocs == 0 ? 0.0d : ((double) extractionSucceededCount) / totalDocs;
-            if (extractionSuccessRate + EPSILON < context.minExtractionSuccessRate) {
-                continue;
-            }
-
-            String disputeStatus = claim.getDisputeStatus() == null ? null : claim.getDisputeStatus().name();
-            if (disputeStatus != null && context.excludedDisputeStatuses.contains(disputeStatus)) {
+            CandidateEligibilityEvaluation eligibility = evaluateCandidateEligibility(claim, currentScore, documents, context);
+            if (!eligibility.eligible) {
                 continue;
             }
 
@@ -561,9 +544,10 @@ public class PackageService {
             candidate.claim = claim;
             candidate.scoreTotal = currentScore.getScoreTotal();
             candidate.grade = currentScore.getGrade();
-            candidate.faceValue = resolveClaimFaceValue(claim);
-            candidate.extractionSuccessRate = extractionSuccessRate;
-            candidate.requiredDocTypesPresent = requiredDocsPresent;
+            candidate.faceValue = eligibility.faceValue;
+            candidate.extractionSuccessRate = eligibility.extractionSuccessRate;
+            candidate.requiredDocTypesPresent = eligibility.requiredDocTypesPresent;
+            candidate.jurisdictionKnown = eligibility.jurisdictionKnown;
             candidate.jurisdictionBucket = normalizeBucket(claim.getJurisdictionState());
             candidate.debtorTypeBucket = claim.getDebtorType() == null ? DEFAULT_BUCKET : claim.getDebtorType().name();
             candidates.add(candidate);
@@ -597,6 +581,92 @@ public class PackageService {
             }
         }
         return false;
+    }
+
+    private CandidateEligibilityEvaluation evaluateCandidateEligibility(
+            Claim claim,
+            ClaimScore currentScore,
+            List<ClaimDocument> documents,
+            PackagingRuleContext context
+    ) {
+        CandidateEligibilityEvaluation evaluation = new CandidateEligibilityEvaluation();
+        evaluation.eligible = false;
+        evaluation.requiredDocTypesPresent = false;
+        evaluation.faceValue = resolveClaimFaceValue(claim);
+        evaluation.jurisdictionKnown = isJurisdictionKnown(claim.getJurisdictionState());
+
+        if (!isPackageEligibleClaimStatus(claim.getStatus())) {
+            return evaluation;
+        }
+
+        if (context.minScore != null && currentScore.getScoreTotal() < context.minScore) {
+            return evaluation;
+        }
+        if (context.minGradeRank != null && gradeRankOrZero(currentScore.getGrade()) < context.minGradeRank) {
+            return evaluation;
+        }
+        if (context.minBalance != null && evaluation.faceValue.compareTo(context.minBalance) < 0) {
+            return evaluation;
+        }
+        if (context.requireJurisdictionKnown && !evaluation.jurisdictionKnown) {
+            return evaluation;
+        }
+
+        Set<String> availableDocTypes = new HashSet<>();
+        int extractionSucceededCount = 0;
+        if (documents != null) {
+            for (ClaimDocument document : documents) {
+                if (document.getDocumentType() != null) {
+                    availableDocTypes.add(document.getDocumentType().name());
+                }
+                if (document.getExtractionStatus() == ExtractionStatus.SUCCEEDED) {
+                    extractionSucceededCount++;
+                }
+            }
+        }
+
+        if (availableDocTypes.isEmpty()) {
+            return evaluation;
+        }
+
+        boolean requiredDocsPresent = hasRequiredPackagingDocuments(availableDocTypes, context.requiredDocTypes);
+        if (!requiredDocsPresent) {
+            return evaluation;
+        }
+
+        int totalDocs = documents == null ? 0 : documents.size();
+        double extractionSuccessRate = totalDocs == 0 ? 0.0d : ((double) extractionSucceededCount) / totalDocs;
+        if (extractionSuccessRate + EPSILON < context.minExtractionSuccessRate) {
+            return evaluation;
+        }
+
+        String disputeStatus = claim.getDisputeStatus() == null ? null : claim.getDisputeStatus().name();
+        if (disputeStatus != null && context.excludedDisputeStatuses.contains(disputeStatus)) {
+            return evaluation;
+        }
+
+        evaluation.requiredDocTypesPresent = true;
+        evaluation.extractionSuccessRate = extractionSuccessRate;
+        evaluation.eligible = true;
+        return evaluation;
+    }
+
+    private boolean isPackageEligibleClaimStatus(ClaimStatus status) {
+        if (status == null) {
+            return false;
+        }
+        if (status == ClaimStatus.PACKAGED || status == ClaimStatus.LISTED || status == ClaimStatus.SOLD) {
+            return false;
+        }
+        return status == ClaimStatus.APPROVED;
+    }
+
+    private boolean isJurisdictionKnown(String jurisdictionState) {
+        if (jurisdictionState == null) {
+            return false;
+        }
+        String normalized = jurisdictionState.trim();
+        return !normalized.isEmpty() && !"UNKNOWN".equalsIgnoreCase(normalized);
     }
 
     private SelectionOutcome selectCandidates(List<CandidateClaim> candidates, PackagingRuleContext context) {
@@ -670,12 +740,16 @@ public class PackageService {
         Map<String, Object> thresholds = new LinkedHashMap<>();
         thresholds.put("minScore", context.minScore);
         thresholds.put("minGrade", context.minGrade);
+        thresholds.put("minBalance", context.minBalance);
+        thresholds.put("requireJurisdictionKnown", context.requireJurisdictionKnown);
         thresholds.put("requiredDocTypes", context.requiredDocTypes);
         thresholds.put("minExtractionSuccessRate", context.minExtractionSuccessRate);
         payload.put("eligibilityThresholds", thresholds);
 
         payload.put("extractionSuccessRate", selected.candidate.extractionSuccessRate);
         payload.put("requiredDocTypesPresent", selected.candidate.requiredDocTypesPresent);
+        payload.put("jurisdictionKnown", selected.candidate.jurisdictionKnown);
+        payload.put("faceValue", selected.candidate.faceValue);
 
         Map<String, Object> diversification = new LinkedHashMap<>();
         diversification.put("jurisdiction", selected.candidate.jurisdictionBucket);
@@ -913,6 +987,8 @@ public class PackageService {
         private Integer minScore;
         private String minGrade;
         private Integer minGradeRank;
+        private BigDecimal minBalance;
+        private boolean requireJurisdictionKnown;
         private Set<String> requiredDocTypes;
         private Double minExtractionSuccessRate;
         private Set<String> excludedDisputeStatuses;
@@ -932,8 +1008,17 @@ public class PackageService {
         private BigDecimal faceValue;
         private double extractionSuccessRate;
         private boolean requiredDocTypesPresent;
+        private boolean jurisdictionKnown;
         private String jurisdictionBucket;
         private String debtorTypeBucket;
+    }
+
+    private static class CandidateEligibilityEvaluation {
+        private boolean eligible;
+        private BigDecimal faceValue;
+        private double extractionSuccessRate;
+        private boolean requiredDocTypesPresent;
+        private boolean jurisdictionKnown;
     }
 
     private static class SelectedCandidate {

@@ -46,7 +46,14 @@ public class ScoringEngine {
     private static final int DOC_READY_INVOICE_PRESENT_POINTS = 4;
     private static final int DOC_READY_INVOICE_TEXT_EVIDENCE_POINTS = 3;
     private static final int DOC_READY_INVOICE_CONTRACT_CORROBORATION_POINTS = 2;
+    private static final int DOC_READY_INVOICE_ITEMIZATION_CORROBORATION_POINTS = 1;
+    private static final int DOC_READY_BUSINESS_DEBTOR_BONUS_POINTS = 2;
+    private static final int DOC_READY_RECENT_DEBT_BONUS_POINTS = 2;
+    private static final int DOC_READY_MEANINGFUL_BALANCE_BONUS_POINTS = 2;
+    private static final int DOC_READY_JURISDICTION_KNOWN_BONUS_POINTS = 1;
+    private static final BigDecimal DOC_READY_MEANINGFUL_BALANCE_THRESHOLD = new BigDecimal("500.00");
     private static final int MIN_SUBSTANTIVE_EXTRACTED_CHAR_COUNT = 40;
+    private static final long RECENT_DEBT_DAYS_THRESHOLD = 365L;
 
     private final ClaimRepository claimRepository;
     private final ClaimDocumentRepository claimDocumentRepository;
@@ -243,7 +250,7 @@ public class ScoringEngine {
         }
 
         if (trigger == ScoringTrigger.DOC_READY) {
-            documentation += applyDocReadyEvidenceBonuses(documents, contributions);
+            documentation += applyDocReadyEvidenceBonuses(claim, metrics, documents, contributions);
         }
 
         ScoringRulesetConfig.CapsConfig caps = config.getCaps();
@@ -463,13 +470,19 @@ public class ScoringEngine {
         return true;
     }
 
-    private int applyDocReadyEvidenceBonuses(List<ClaimDocument> documents, List<ScoringContribution> contributions) {
+    private int applyDocReadyEvidenceBonuses(
+            Claim claim,
+            DerivedMetrics metrics,
+            List<ClaimDocument> documents,
+            List<ScoringContribution> contributions
+    ) {
         if (documents == null || documents.isEmpty()) {
             return 0;
         }
 
         int extractedInvoiceCount = 0;
         int extractedContractCount = 0;
+        int extractedItemizationCount = 0;
         int invoiceWithSubstantiveTextCount = 0;
         int maxInvoiceExtractedChars = 0;
 
@@ -488,6 +501,8 @@ public class ScoringEngine {
                 }
             } else if (documentType == DocumentType.CONTRACT) {
                 extractedContractCount++;
+            } else if (documentType == DocumentType.ITEMIZATION) {
+                extractedItemizationCount++;
             }
         }
 
@@ -529,6 +544,76 @@ public class ScoringEngine {
                     "DOC_READY_CORROBORATING_PRIMARY_DOCS",
                     DOC_READY_INVOICE_CONTRACT_CORROBORATION_POINTS,
                     "Invoice evidence corroborated by extracted contract",
+                    fieldsUsed
+            );
+        }
+
+        if (extractedInvoiceCount > 0 && extractedItemizationCount > 0) {
+            bonus += DOC_READY_INVOICE_ITEMIZATION_CORROBORATION_POINTS;
+            Map<String, Object> fieldsUsed = new LinkedHashMap<>();
+            fieldsUsed.put("invoiceExtractedCount", extractedInvoiceCount);
+            fieldsUsed.put("itemizationExtractedCount", extractedItemizationCount);
+            addContribution(
+                    contributions,
+                    "DOC_READY_CORROBORATING_ITEMIZATION",
+                    DOC_READY_INVOICE_ITEMIZATION_CORROBORATION_POINTS,
+                    "Invoice evidence corroborated by extracted itemization",
+                    fieldsUsed
+            );
+        }
+
+        if (extractedInvoiceCount > 0 && claim.getDebtorType() == com.claimchain.backend.model.DebtorType.BUSINESS) {
+            bonus += DOC_READY_BUSINESS_DEBTOR_BONUS_POINTS;
+            Map<String, Object> fieldsUsed = new LinkedHashMap<>();
+            fieldsUsed.put("debtorType", "BUSINESS");
+            addContribution(
+                    contributions,
+                    "DOC_READY_COMMERCIAL_DEBTOR",
+                    DOC_READY_BUSINESS_DEBTOR_BONUS_POINTS,
+                    "Commercial debtor profile supports collectability",
+                    fieldsUsed
+            );
+        }
+
+        if (extractedInvoiceCount > 0 && metrics.debtAgeDays() != null && metrics.debtAgeDays() <= RECENT_DEBT_DAYS_THRESHOLD) {
+            bonus += DOC_READY_RECENT_DEBT_BONUS_POINTS;
+            Map<String, Object> fieldsUsed = new LinkedHashMap<>();
+            fieldsUsed.put("debtAgeDays", metrics.debtAgeDays());
+            fieldsUsed.put("thresholdDays", RECENT_DEBT_DAYS_THRESHOLD);
+            addContribution(
+                    contributions,
+                    "DOC_READY_RECENT_DEBT",
+                    DOC_READY_RECENT_DEBT_BONUS_POINTS,
+                    "Debt recency supports recovery confidence",
+                    fieldsUsed
+            );
+        }
+
+        if (extractedInvoiceCount > 0
+                && metrics.currentAmount() != null
+                && metrics.currentAmount().compareTo(DOC_READY_MEANINGFUL_BALANCE_THRESHOLD) >= 0) {
+            bonus += DOC_READY_MEANINGFUL_BALANCE_BONUS_POINTS;
+            Map<String, Object> fieldsUsed = new LinkedHashMap<>();
+            fieldsUsed.put("currentAmount", metrics.currentAmount());
+            fieldsUsed.put("thresholdAmount", DOC_READY_MEANINGFUL_BALANCE_THRESHOLD);
+            addContribution(
+                    contributions,
+                    "DOC_READY_MEANINGFUL_BALANCE",
+                    DOC_READY_MEANINGFUL_BALANCE_BONUS_POINTS,
+                    "Claim balance supports packaging viability",
+                    fieldsUsed
+            );
+        }
+
+        if (extractedInvoiceCount > 0 && metrics.jurisdictionKnown()) {
+            bonus += DOC_READY_JURISDICTION_KNOWN_BONUS_POINTS;
+            Map<String, Object> fieldsUsed = new LinkedHashMap<>();
+            fieldsUsed.put("jurisdictionState", claim.getJurisdictionState());
+            addContribution(
+                    contributions,
+                    "DOC_READY_JURISDICTION_KNOWN",
+                    DOC_READY_JURISDICTION_KNOWN_BONUS_POINTS,
+                    "Jurisdiction data supports enforceability planning",
                     fieldsUsed
             );
         }
