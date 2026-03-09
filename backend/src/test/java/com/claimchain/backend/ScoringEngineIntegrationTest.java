@@ -248,7 +248,7 @@ class ScoringEngineIntegrationTest {
     }
 
     @Test
-    void approvalWithPendingExtraction_stillCreatesEligibleScore() throws Exception {
+    void approvalWithPendingExtraction_autoRunsExtraction_andScoresOnDocReady() throws Exception {
         createAndActivateScoringRuleset(SCORING_CONFIG_V1, 1);
         Long claimId = createClaim("NONE");
         uploadRequiredDocuments(claimId);
@@ -256,14 +256,26 @@ class ScoringEngineIntegrationTest {
         startReview(claimId);
         approve(claimId);
 
-        List<ClaimScore> scores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        List<ClaimScore> immediateScores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        for (ClaimScore immediateScore : immediateScores) {
+            JsonNode immediateExplainability = objectMapper.readTree(immediateScore.getExplainabilityJson());
+            assertThat(immediateExplainability.path("trigger").asText()).isNotEqualTo("APPROVAL");
+        }
+
+        Instant deadline = Instant.now().plusSeconds(10);
+        List<ClaimScore> scores = immediateScores;
+        while (scores.isEmpty() && Instant.now().isBefore(deadline)) {
+            Thread.sleep(100);
+            scores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        }
+
         assertThat(scores).hasSize(1);
 
         ClaimScore score = scores.get(0);
         assertThat(score.isEligible()).isTrue();
         assertThat(score.getScoreTotal()).isGreaterThan(0);
         JsonNode explainability = objectMapper.readTree(score.getExplainabilityJson());
-        assertThat(explainability.path("trigger").asText()).isEqualTo("APPROVAL");
+        assertThat(explainability.path("trigger").asText()).isEqualTo("DOC_READY");
     }
 
     @Test

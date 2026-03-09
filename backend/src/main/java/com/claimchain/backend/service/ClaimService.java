@@ -95,6 +95,9 @@ public class ClaimService {
     @Autowired
     private ScoringEngine scoringEngine;
 
+    @Autowired
+    private DocumentJobRunnerService documentJobRunnerService;
+
     @Value("${documents.max-bytes:10000000}")
     private long maxDocumentBytes;
 
@@ -295,7 +298,7 @@ public class ClaimService {
         );
 
         if (newStatus == ClaimStatus.APPROVED) {
-            scoringEngine.autoScoreOnApprovalIfReady(saved.getId(), admin.getId());
+            triggerApprovalWorkflow(saved, admin);
         }
 
         return mapToDTO(saved);
@@ -747,6 +750,29 @@ public class ClaimService {
             }
         }
         return normalized;
+    }
+
+    private void triggerApprovalWorkflow(Claim claim, User admin) {
+        List<ClaimDocument> documents = claimDocumentRepository.findByClaimId(claim.getId());
+        if (documents.isEmpty()) {
+            scoringEngine.autoScoreOnApprovalIfReady(claim.getId(), admin.getId());
+            return;
+        }
+
+        if (hasPendingTikaExtractionJobs(claim.getId())) {
+            documentJobRunnerService.runQueuedTikaJobsForClaimAsync(claim.getId());
+            return;
+        }
+
+        scoringEngine.autoScoreOnApprovalIfReady(claim.getId(), admin.getId());
+    }
+
+    private boolean hasPendingTikaExtractionJobs(Long claimId) {
+        return documentJobRepository.existsByDocumentClaimIdAndJobTypeAndStatusIn(
+                claimId,
+                JobType.TIKA_EXTRACT,
+                List.of(JobStatus.QUEUED, JobStatus.RUNNING)
+        );
     }
 
     private String toJson(Object value) {

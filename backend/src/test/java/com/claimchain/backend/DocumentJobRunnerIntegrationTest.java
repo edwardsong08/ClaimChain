@@ -321,31 +321,28 @@ class DocumentJobRunnerIntegrationTest {
         createActiveScoringRuleset(DOC_READY_SCORING_CONFIG);
 
         startReviewAndApprove(claimId);
-        List<ClaimScore> scoresAfterApproval = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
-        assertThat(scoresAfterApproval).hasSize(1);
-        JsonNode approvalExplainability = objectMapper.readTree(scoresAfterApproval.get(0).getExplainabilityJson());
-        assertThat(approvalExplainability.path("trigger").asText()).isEqualTo("APPROVAL");
 
-        mockMvc.perform(
-                        post("/api/admin/jobs/run-document-jobs")
-                                .param("limit", "1")
-                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
-                )
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.processed").value(1));
-
+        Instant deadline = Instant.now().plusSeconds(10);
         ClaimDocument updatedDocument = claimDocumentRepository.findById(documentId).orElseThrow();
+        List<ClaimScore> scoresAfterDocReady = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        while (Instant.now().isBefore(deadline)) {
+            updatedDocument = claimDocumentRepository.findById(documentId).orElseThrow();
+            scoresAfterDocReady = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+            if (updatedDocument.getExtractionStatus() == ExtractionStatus.SUCCEEDED && !scoresAfterDocReady.isEmpty()) {
+                break;
+            }
+            Thread.sleep(100);
+        }
+
         assertThat(updatedDocument.getStatus()).isEqualTo(DocumentStatus.READY);
         assertThat(updatedDocument.getExtractionStatus()).isEqualTo(ExtractionStatus.SUCCEEDED);
 
-        List<ClaimScore> scoresAfterDocReady = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
         assertThat(scoresAfterDocReady).hasSize(1);
         ClaimScore latestScore = scoresAfterDocReady.get(0);
         assertThat(latestScore.isEligible()).isTrue();
         assertThat(latestScore.getScoreTotal()).isGreaterThan(0);
         JsonNode explainability = objectMapper.readTree(latestScore.getExplainabilityJson());
-        assertThat(explainability.path("trigger").asText()).isEqualTo("APPROVAL");
+        assertThat(explainability.path("trigger").asText()).isEqualTo("DOC_READY");
     }
 
     @Test

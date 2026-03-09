@@ -13,6 +13,7 @@ import com.claimchain.backend.storage.StorageService;
 import org.apache.tika.Tika;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -65,16 +66,34 @@ public class DocumentJobRunnerService {
         return runQueuedJobsByType(JobType.TIKA_EXTRACT, limit);
     }
 
+    @Async
+    public void runQueuedTikaJobsForClaimAsync(Long claimId) {
+        if (claimId == null) {
+            return;
+        }
+        while (runQueuedJobsByTypeAndClaim(JobType.TIKA_EXTRACT, claimId, MAX_LIMIT) > 0) {
+            // Keep draining due queued TIKA jobs for this claim.
+        }
+    }
+
+    public int runQueuedTikaJobsForClaim(Long claimId, int limit) {
+        return runQueuedJobsByTypeAndClaim(JobType.TIKA_EXTRACT, claimId, limit);
+    }
+
     public int runQueuedMalwareScanJobs(int limit) {
         return runQueuedJobsByType(JobType.MALWARE_SCAN, limit);
     }
 
     private int runQueuedJobsByType(JobType jobType, int limit) {
+        return runQueuedJobsByTypeAndClaim(jobType, null, limit);
+    }
+
+    private int runQueuedJobsByTypeAndClaim(JobType jobType, Long claimId, int limit) {
         int normalizedLimit = normalizeLimit(limit);
         int processed = 0;
 
         for (int i = 0; i < normalizedLimit; i++) {
-            Boolean claimedAndProcessed = requiresNewTransaction.execute(status -> claimAndProcessSingleJob(jobType));
+            Boolean claimedAndProcessed = requiresNewTransaction.execute(status -> claimAndProcessSingleJob(jobType, claimId));
             if (!Boolean.TRUE.equals(claimedAndProcessed)) {
                 break;
             }
@@ -84,8 +103,10 @@ public class DocumentJobRunnerService {
         return processed;
     }
 
-    private boolean claimAndProcessSingleJob(JobType jobType) {
-        List<DocumentJob> claimedJobs = documentJobRepository.claimQueuedJobsForType(jobType, 1);
+    private boolean claimAndProcessSingleJob(JobType jobType, Long claimId) {
+        List<DocumentJob> claimedJobs = claimId == null
+                ? documentJobRepository.claimQueuedJobsForType(jobType, 1)
+                : documentJobRepository.claimQueuedJobsForClaimAndType(claimId, jobType, 1);
         if (claimedJobs.isEmpty()) {
             return false;
         }
@@ -117,10 +138,21 @@ public class DocumentJobRunnerService {
 
         Long claimId = document.getClaim().getId();
         try {
+            if (hasPendingTikaJobs(claimId)) {
+                return;
+            }
             scoringEngine.autoScoreOnDocumentsReadyIfApproved(claimId);
         } catch (Exception ex) {
             log.warn("Auto-scoring on document completion failed for claimId={}", claimId, ex);
         }
+    }
+
+    private boolean hasPendingTikaJobs(Long claimId) {
+        return documentJobRepository.existsByDocumentClaimIdAndJobTypeAndStatusIn(
+                claimId,
+                JobType.TIKA_EXTRACT,
+                List.of(JobStatus.QUEUED, JobStatus.RUNNING)
+        );
     }
 
     private void processTikaExtractionJob(DocumentJob job, ClaimDocument document) {
