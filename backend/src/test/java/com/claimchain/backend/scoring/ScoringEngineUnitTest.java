@@ -193,7 +193,7 @@ class ScoringEngineUnitTest {
                 eq(ScoringTrigger.APPROVAL)
         );
 
-        assertThat(scoreCaptor.getValue()).isEqualTo(72);
+        assertThat(scoreCaptor.getValue()).isEqualTo(83);
         assertThat(gradeCaptor.getValue()).isEqualTo("B");
     }
 
@@ -450,6 +450,96 @@ class ScoringEngineUnitTest {
     }
 
     @Test
+    void scoreClaim_adminRescoreWithExtractedDocs_matchesDocReadyEvidenceBonuses() throws Exception {
+        Long docReadyClaimId = 215L;
+        Long adminRescoreClaimId = 216L;
+        Claim docReadyClaim = buildApprovedClaim(docReadyClaimId, DisputeStatus.NONE, new BigDecimal("2500.00"));
+        Claim adminRescoreClaim = buildApprovedClaim(adminRescoreClaimId, DisputeStatus.NONE, new BigDecimal("2500.00"));
+
+        List<ClaimDocument> extractedEvidenceDocs = List.of(
+                buildDocument(DocumentType.INVOICE, ExtractionStatus.SUCCEEDED, 180),
+                buildDocument(DocumentType.CONTRACT, ExtractionStatus.SUCCEEDED, 140)
+        );
+        Ruleset ruleset = buildActiveRuleset(35L, 3, validScoringConfigV1());
+
+        when(claimRepository.findById(docReadyClaimId)).thenReturn(Optional.of(docReadyClaim));
+        when(claimRepository.findById(adminRescoreClaimId)).thenReturn(Optional.of(adminRescoreClaim));
+        when(claimDocumentRepository.findByClaimId(docReadyClaimId)).thenReturn(extractedEvidenceDocs);
+        when(claimDocumentRepository.findByClaimId(adminRescoreClaimId)).thenReturn(extractedEvidenceDocs);
+        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+                .thenReturn(Optional.of(ruleset));
+        when(claimScoringPersistenceService.recordScoreRun(
+                any(),
+                eq(35L),
+                eq(3),
+                anyBoolean(),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                any(),
+                any()
+        )).thenAnswer(invocation -> null);
+
+        scoringEngine.scoreClaim(docReadyClaimId, null, false, ScoringTrigger.DOC_READY);
+        scoringEngine.scoreClaim(adminRescoreClaimId, 77L, true, ScoringTrigger.ADMIN_RESCORE);
+
+        ArgumentCaptor<Long> claimIdCaptor = ArgumentCaptor.forClass(Long.class);
+        ArgumentCaptor<Integer> scoreCaptor = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<String> explainabilityCaptor = ArgumentCaptor.forClass(String.class);
+        verify(claimScoringPersistenceService, times(2)).recordScoreRun(
+                claimIdCaptor.capture(),
+                eq(35L),
+                eq(3),
+                eq(true),
+                scoreCaptor.capture(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                explainabilityCaptor.capture(),
+                anyString(),
+                any(),
+                any()
+        );
+
+        Integer docReadyScore = null;
+        Integer adminRescoreScore = null;
+        String docReadyExplainability = null;
+        String adminRescoreExplainability = null;
+        for (int i = 0; i < claimIdCaptor.getAllValues().size(); i++) {
+            Long persistedClaimId = claimIdCaptor.getAllValues().get(i);
+            if (docReadyClaimId.equals(persistedClaimId)) {
+                docReadyScore = scoreCaptor.getAllValues().get(i);
+                docReadyExplainability = explainabilityCaptor.getAllValues().get(i);
+            } else if (adminRescoreClaimId.equals(persistedClaimId)) {
+                adminRescoreScore = scoreCaptor.getAllValues().get(i);
+                adminRescoreExplainability = explainabilityCaptor.getAllValues().get(i);
+            }
+        }
+
+        assertThat(docReadyScore).isNotNull();
+        assertThat(adminRescoreScore).isNotNull();
+        assertThat(adminRescoreScore).isEqualTo(docReadyScore);
+
+        JsonNode docReadyExplainabilityJson = objectMapper.readTree(docReadyExplainability);
+        JsonNode adminRescoreExplainabilityJson = objectMapper.readTree(adminRescoreExplainability);
+        assertThat(docReadyExplainabilityJson.path("trigger").asText()).isEqualTo("DOC_READY");
+        assertThat(adminRescoreExplainabilityJson.path("trigger").asText()).isEqualTo("ADMIN_RESCORE");
+        assertThat(docReadyExplainabilityJson.path("contributions").toString())
+                .contains("Invoice document extracted successfully")
+                .contains("Invoice evidence corroborated by extracted contract");
+        assertThat(adminRescoreExplainabilityJson.path("contributions").toString())
+                .contains("Invoice document extracted successfully")
+                .contains("Invoice evidence corroborated by extracted contract");
+    }
+
+    @Test
     void scoreClaim_approvalWithoutDocs_doesNotApplyDocReadyInvoiceEvidenceBonus() throws Exception {
         Long claimId = 212L;
         Claim claim = buildApprovedClaim(claimId, DisputeStatus.NONE, new BigDecimal("2500.00"));
@@ -498,6 +588,58 @@ class ScoringEngineUnitTest {
 
         JsonNode contributions = objectMapper.readTree(explainabilityCaptor.getValue()).path("contributions");
         assertThat(contributions.toString()).doesNotContain("Invoice document extracted successfully");
+    }
+
+    @Test
+    void scoreClaim_adminRescoreWithoutDocs_doesNotApplyDocReadyInvoiceEvidenceBonus() throws Exception {
+        Long claimId = 218L;
+        Claim claim = buildApprovedClaim(claimId, DisputeStatus.NONE, new BigDecimal("2500.00"));
+        Ruleset ruleset = buildActiveRuleset(36L, 2, validScoringConfigV1());
+
+        when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
+        when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(List.of());
+        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+                .thenReturn(Optional.of(ruleset));
+        when(claimScoringPersistenceService.recordScoreRun(
+                eq(claimId),
+                eq(36L),
+                eq(2),
+                anyBoolean(),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(91L),
+                eq(ScoringTrigger.ADMIN_RESCORE)
+        )).thenAnswer(invocation -> null);
+
+        scoringEngine.scoreClaim(claimId, 91L, true, ScoringTrigger.ADMIN_RESCORE);
+
+        ArgumentCaptor<String> explainabilityCaptor = ArgumentCaptor.forClass(String.class);
+        verify(claimScoringPersistenceService).recordScoreRun(
+                eq(claimId),
+                eq(36L),
+                eq(2),
+                eq(true),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                explainabilityCaptor.capture(),
+                anyString(),
+                eq(91L),
+                eq(ScoringTrigger.ADMIN_RESCORE)
+        );
+
+        JsonNode explainability = objectMapper.readTree(explainabilityCaptor.getValue());
+        assertThat(explainability.path("trigger").asText()).isEqualTo("ADMIN_RESCORE");
+        assertThat(explainability.path("contributions").toString()).doesNotContain("Invoice document extracted successfully");
     }
 
     @Test

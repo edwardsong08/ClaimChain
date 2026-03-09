@@ -196,6 +196,8 @@ class ScoringEngineIntegrationTest {
         assertThat(latest.getScoreTotal()).isNotEqualTo(previous.getScoreTotal());
         JsonNode latestExplainability = objectMapper.readTree(latest.getExplainabilityJson());
         assertThat(latestExplainability.path("trigger").asText()).isEqualTo("ADMIN_RESCORE");
+        assertThat(latestExplainability.path("contributions").toString())
+                .contains("Invoice document extracted successfully");
 
         Integer rescoreAuditCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM audit_events WHERE action = 'CLAIM_RESCORED' AND entity_type = 'CLAIM' AND entity_id = ?",
@@ -318,6 +320,43 @@ class ScoringEngineIntegrationTest {
 
         JsonNode claimBody = fetchClaim(claimId);
         assertThat(claimBody.path("scoreTrigger").asText()).isEqualTo("DOC_READY");
+    }
+
+    @Test
+    void returnToReview_thenReapproveWithAlreadyExtractedDocs_keepsEvidenceAwareScoringOnApprovalTrigger() throws Exception {
+        createAndActivateScoringRuleset(SCORING_CONFIG_V1, 1);
+        Long claimId = createClaim("NONE");
+
+        startReview(claimId);
+        approve(claimId);
+
+        List<ClaimScore> firstApprovalScores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        assertThat(firstApprovalScores).hasSize(1);
+        ClaimScore firstApprovalScore = firstApprovalScores.get(0);
+        JsonNode firstExplainability = objectMapper.readTree(firstApprovalScore.getExplainabilityJson());
+        assertThat(firstExplainability.path("trigger").asText()).isEqualTo("APPROVAL");
+
+        returnToReview(claimId);
+        uploadRequiredDocuments(claimId);
+        runDocumentJobs(10);
+
+        List<ClaimScore> afterExtractionBeforeApprove = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        assertThat(afterExtractionBeforeApprove).hasSize(1);
+
+        approve(claimId);
+
+        List<ClaimScore> scores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        assertThat(scores).hasSize(2);
+        ClaimScore latest = scores.get(0);
+        JsonNode latestExplainability = objectMapper.readTree(latest.getExplainabilityJson());
+        assertThat(latestExplainability.path("trigger").asText()).isEqualTo("APPROVAL");
+        assertThat(latestExplainability.path("contributions").toString())
+                .contains("Invoice document extracted successfully")
+                .contains("Invoice evidence corroborated by extracted contract");
+        assertThat(latest.getScoreTotal()).isGreaterThan(firstApprovalScore.getScoreTotal());
+
+        JsonNode claimBody = fetchClaim(claimId);
+        assertThat(claimBody.path("scoreTrigger").asText()).isEqualTo("APPROVAL");
     }
 
     @Test

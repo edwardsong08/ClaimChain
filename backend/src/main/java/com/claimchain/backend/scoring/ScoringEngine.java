@@ -249,9 +249,7 @@ public class ScoringEngine {
             contributions.add(contribution);
         }
 
-        if (trigger == ScoringTrigger.DOC_READY) {
-            documentation += applyDocReadyEvidenceBonuses(claim, metrics, documents, contributions);
-        }
+        documentation += applyDocReadyEvidenceBonuses(claim, metrics, documents, contributions);
 
         ScoringRulesetConfig.CapsConfig caps = config.getCaps();
         enforceability = applyCap(enforceability, caps == null ? null : caps.getEnforceabilityMax());
