@@ -240,7 +240,28 @@ class ScoringEngineIntegrationTest {
         assertThat(scores).hasSize(1);
 
         ClaimScore score = scores.get(0);
+        assertThat(score.isEligible()).isTrue();
+        assertThat(score.getScoreTotal()).isGreaterThan(0);
         assertThat(score.getScoreTotal()).isNotNull();
+        JsonNode explainability = objectMapper.readTree(score.getExplainabilityJson());
+        assertThat(explainability.path("trigger").asText()).isEqualTo("APPROVAL");
+    }
+
+    @Test
+    void approvalWithPendingExtraction_stillCreatesEligibleScore() throws Exception {
+        createAndActivateScoringRuleset(SCORING_CONFIG_V1, 1);
+        Long claimId = createClaim("NONE");
+        uploadRequiredDocuments(claimId);
+
+        startReview(claimId);
+        approve(claimId);
+
+        List<ClaimScore> scores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        assertThat(scores).hasSize(1);
+
+        ClaimScore score = scores.get(0);
+        assertThat(score.isEligible()).isTrue();
+        assertThat(score.getScoreTotal()).isGreaterThan(0);
         JsonNode explainability = objectMapper.readTree(score.getExplainabilityJson());
         assertThat(explainability.path("trigger").asText()).isEqualTo("APPROVAL");
     }

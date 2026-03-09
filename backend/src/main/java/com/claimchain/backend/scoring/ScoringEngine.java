@@ -176,13 +176,6 @@ public class ScoringEngine {
         Set<String> missingDocTypes = new LinkedHashSet<>(requiredDocTypes);
         missingDocTypes.removeAll(metrics.presentDocTypes());
 
-        double minExtractionSuccessRate = eligibility == null || eligibility.getMinExtractionSuccessRate() == null
-                ? 0d
-                : eligibility.getMinExtractionSuccessRate();
-        if (metrics.extractionSuccessRate() < minExtractionSuccessRate) {
-            eligibilityFailures.add("Extraction success rate below minimum threshold.");
-        }
-
         boolean blockActiveDisputes = eligibility != null && Boolean.TRUE.equals(eligibility.getBlockActiveDisputes());
         if (blockActiveDisputes && claim.getDisputeStatus() == DisputeStatus.ACTIVE) {
             eligibilityFailures.add("Active dispute blocks eligibility.");
