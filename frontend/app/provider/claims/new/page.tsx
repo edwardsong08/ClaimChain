@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
@@ -9,6 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import { createClaim } from "@/services/claims";
+import { uploadClaimDocument } from "@/services/documents";
 import type { CreateClaimRequest } from "@/types/claims";
 
 const CLAIM_TYPE_OPTIONS = [
@@ -32,6 +34,16 @@ const DISPUTE_STATUS_OPTIONS = [
   { label: "Possible", value: "POSSIBLE" },
   { label: "Active", value: "ACTIVE" },
   { label: "Resolved", value: "RESOLVED" },
+] as const;
+
+const DOCUMENT_TYPE_OPTIONS = [
+  "INVOICE",
+  "CONTRACT",
+  "AUTHORIZATION",
+  "ITEMIZATION",
+  "PROOF_OF_SERVICE",
+  "CORRESPONDENCE",
+  "OTHER",
 ] as const;
 
 const CLAIM_TYPE_VALUES = CLAIM_TYPE_OPTIONS.map((option) => option.value) as [
@@ -92,6 +104,11 @@ const claimFormSchema = z.object({
 });
 
 type ClaimFormValues = z.infer<typeof claimFormSchema>;
+type PendingClaimDocument = {
+  localId: number;
+  file: File;
+  documentType: (typeof DOCUMENT_TYPE_OPTIONS)[number];
+};
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (!(error instanceof Error)) {
@@ -131,9 +148,19 @@ function toOptionalNumber(value: string | undefined) {
   return Number.isNaN(parsed) ? undefined : parsed;
 }
 
+function formatDocumentType(value: string) {
+  return value.replaceAll("_", " ");
+}
+
 export default function NewProviderClaimPage() {
   const router = useRouter();
   const { token, isReady, isAuthenticated } = useAuthSession();
+  const documentFileInputRef = useRef<HTMLInputElement | null>(null);
+  const nextPendingDocumentIdRef = useRef(1);
+  const [pendingDocumentType, setPendingDocumentType] =
+    useState<(typeof DOCUMENT_TYPE_OPTIONS)[number]>("INVOICE");
+  const [pendingDocuments, setPendingDocuments] = useState<PendingClaimDocument[]>([]);
+  const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
 
   const {
     register,
@@ -170,18 +197,35 @@ export default function NewProviderClaimPage() {
       }
       return createClaim(payload, token);
     },
-    onSuccess: (createdClaim) => {
-      toast.success("Claim submitted successfully.");
-      if (createdClaim.id) {
-        router.replace(`/provider/claims/${createdClaim.id}`);
-        return;
-      }
-      router.replace("/provider/claims");
-    },
     onError: (error) => {
       toast.error(getErrorMessage(error, "Claim submission failed."));
     },
   });
+
+  const isSubmissionInFlight =
+    isSubmitting || createClaimMutation.isPending || isUploadingDocuments;
+
+  const handleDocumentSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) {
+      return;
+    }
+
+    setPendingDocuments((current) => [
+      ...current,
+      ...files.map((file) => ({
+        localId: nextPendingDocumentIdRef.current++,
+        file,
+        documentType: pendingDocumentType,
+      })),
+    ]);
+
+    event.target.value = "";
+  };
+
+  const removePendingDocument = (localId: number) => {
+    setPendingDocuments((current) => current.filter((document) => document.localId !== localId));
+  };
 
   const onSubmit = async (values: ClaimFormValues) => {
     if (!token) {
@@ -210,7 +254,64 @@ export default function NewProviderClaimPage() {
       lastPaymentDate: toOptionalString(values.lastPaymentDate),
     };
 
-    await createClaimMutation.mutateAsync(payload);
+    let createdClaim;
+    try {
+      createdClaim = await createClaimMutation.mutateAsync(payload);
+    } catch {
+      return;
+    }
+
+    if (!createdClaim.id) {
+      toast.success("Claim submitted successfully.");
+      router.replace("/provider/claims");
+      return;
+    }
+
+    if (pendingDocuments.length === 0) {
+      toast.success("Claim submitted successfully.");
+      router.replace(`/provider/claims/${createdClaim.id}`);
+      return;
+    }
+
+    setIsUploadingDocuments(true);
+
+    const uploadResults = await Promise.allSettled(
+      pendingDocuments.map((document) =>
+        uploadClaimDocument(token, {
+          claimId: String(createdClaim.id),
+          file: document.file,
+          documentType: document.documentType,
+        })
+      )
+    );
+
+    setIsUploadingDocuments(false);
+
+    const failedUploads = uploadResults
+      .map((result, index) => ({ result, document: pendingDocuments[index] }))
+      .filter((item): item is { result: PromiseRejectedResult; document: PendingClaimDocument } =>
+        item.result.status === "rejected"
+      );
+
+    if (failedUploads.length === 0) {
+      toast.success(
+        `Claim submitted successfully. Uploaded ${pendingDocuments.length} document${
+          pendingDocuments.length === 1 ? "" : "s"
+        }.`
+      );
+    } else {
+      const failedNames = failedUploads
+        .slice(0, 3)
+        .map((item) => item.document.file.name)
+        .join(", ");
+      toast.error(
+        `Claim submitted, but ${failedUploads.length} document upload${
+          failedUploads.length === 1 ? "" : "s"
+        } failed${failedNames ? `: ${failedNames}` : "."}`
+      );
+    }
+
+    router.replace(`/provider/claims/${createdClaim.id}`);
   };
 
   return (
@@ -534,12 +635,88 @@ export default function NewProviderClaimPage() {
             )}
           </div>
 
+          <div className="rounded-md border p-4">
+            <h2 className="text-sm font-semibold">Supporting Documents (Optional)</h2>
+            <p className="mt-1 text-xs text-gray-600">
+              Add documents now to attach them immediately after claim creation.
+            </p>
+
+            <div className="mt-3 space-y-3">
+              <div>
+                <label htmlFor="documentType" className="mb-1 block text-sm font-medium">
+                  Document Type
+                </label>
+                <select
+                  id="documentType"
+                  value={pendingDocumentType}
+                  onChange={(event) =>
+                    setPendingDocumentType(
+                      event.target.value as (typeof DOCUMENT_TYPE_OPTIONS)[number]
+                    )
+                  }
+                  disabled={isSubmissionInFlight}
+                  className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black"
+                >
+                  {DOCUMENT_TYPE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {formatDocumentType(option)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="documentFiles" className="mb-1 block text-sm font-medium">
+                  Files
+                </label>
+                <input
+                  id="documentFiles"
+                  ref={documentFileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.png,.jpg,.jpeg,.txt"
+                  disabled={isSubmissionInFlight}
+                  onChange={handleDocumentSelection}
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                />
+              </div>
+
+              {pendingDocuments.length > 0 ? (
+                <ul className="space-y-2">
+                  {pendingDocuments.map((document) => (
+                    <li
+                      key={document.localId}
+                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{document.file.name}</p>
+                        <p className="text-xs text-gray-600">
+                          {formatDocumentType(document.documentType)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removePendingDocument(document.localId)}
+                        disabled={isSubmissionInFlight}
+                        className="rounded-md border px-2 py-1 text-xs font-medium disabled:opacity-60"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-gray-600">No documents selected.</p>
+              )}
+            </div>
+          </div>
+
           <button
             type="submit"
-            disabled={!isAuthenticated || isSubmitting || createClaimMutation.isPending}
+            disabled={!isAuthenticated || isSubmissionInFlight}
             className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
           >
-            {isSubmitting || createClaimMutation.isPending
+            {isSubmissionInFlight
               ? "Submitting..."
               : "Submit Claim"}
           </button>

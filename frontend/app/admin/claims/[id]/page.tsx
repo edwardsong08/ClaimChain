@@ -13,8 +13,12 @@ import {
   rescoreClaim,
   returnClaimToReview,
 } from "@/services/admin";
-import { listClaimDocuments } from "@/services/documents";
-import { canShowRescore } from "@/lib/claim-status";
+import {
+  downloadClaimDocument,
+  isInlineViewableDocument,
+  listClaimDocuments,
+} from "@/services/documents";
+import { canShowRescore, isReviewStateStatus } from "@/lib/claim-status";
 import type { AdminClaimDecision } from "@/types/admin";
 import type { Claim } from "@/types/claims";
 
@@ -199,6 +203,8 @@ export default function AdminClaimDetailPage() {
   const [missingDocsInput, setMissingDocsInput] = useState("");
   const [decisionInFlight, setDecisionInFlight] =
     useState<AdminClaimDecision | null>(null);
+  const [openingDocumentId, setOpeningDocumentId] = useState<number | null>(null);
+  const [downloadingDocumentId, setDownloadingDocumentId] = useState<number | null>(null);
 
   const numericClaimId = claimId ? Number(claimId) : Number.NaN;
 
@@ -342,22 +348,28 @@ export default function AdminClaimDetailPage() {
     },
     onSuccess: async () => {
       toast.success("Claim deleted successfully.");
-      await queryClient.invalidateQueries({
-        queryKey: ["admin-claim-detail", claimId, token],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["admin-submitted-claims", token],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["admin-in-review-claims", token],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["admin-approved-claims", token],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["admin-rejected-claims", token],
-      });
-      router.push("/admin/dashboard");
+      try {
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: ["admin-claim-detail", claimId, token],
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ["admin-submitted-claims", token],
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ["admin-in-review-claims", token],
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ["admin-approved-claims", token],
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ["admin-rejected-claims", token],
+          }),
+        ]);
+      } finally {
+        router.replace("/admin/dashboard");
+        router.refresh();
+      }
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, "Unable to delete claim."));
@@ -365,7 +377,8 @@ export default function AdminClaimDetailPage() {
   });
 
   const claim = claimQuery.data;
-  const canSubmitDecision = claim?.status === "UNDER_REVIEW";
+  const isReviewState = isReviewStateStatus(claim?.status);
+  const canSubmitDecision = isReviewState;
   const canReturnToReview =
     claim?.status === "APPROVED" || claim?.status === "REJECTED";
   const canRescore = canShowRescore(claim?.status);
@@ -374,6 +387,61 @@ export default function AdminClaimDetailPage() {
     rescoreMutation.isPending ||
     returnToReviewMutation.isPending ||
     deleteClaimMutation.isPending;
+
+  const handleOpenDocument = async (documentId: number, fallbackFilename: string) => {
+    if (!token) {
+      toast.error("You must be logged in as admin.");
+      return;
+    }
+
+    setOpeningDocumentId(documentId);
+
+    try {
+      const { blob, filename, contentType } = await downloadClaimDocument(token, documentId);
+      const resolvedFilename = filename || fallbackFilename || `document-${documentId}`;
+      if (!isInlineViewableDocument(contentType, resolvedFilename)) {
+        toast.error("This file type cannot be opened inline. Use Download.");
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+      const openedWindow = window.open(objectUrl, "_blank", "noopener,noreferrer");
+      if (!openedWindow) {
+        toast.error("Popup blocked. Allow popups to open this document.");
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Unable to open document."));
+    } finally {
+      setOpeningDocumentId(null);
+    }
+  };
+
+  const handleDownloadDocument = async (documentId: number, fallbackFilename: string) => {
+    if (!token) {
+      toast.error("You must be logged in as admin.");
+      return;
+    }
+
+    setDownloadingDocumentId(documentId);
+
+    try {
+      const { blob, filename } = await downloadClaimDocument(token, documentId);
+      const resolvedFilename = filename || fallbackFilename || `document-${documentId}`;
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = resolvedFilename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Unable to download document."));
+    } finally {
+      setDownloadingDocumentId(null);
+    }
+  };
 
   return (
     <main className="min-h-screen px-6 py-10">
@@ -470,16 +538,51 @@ export default function AdminClaimDetailPage() {
                 </p>
               ) : (
                 <ul className="mt-2 space-y-2">
-                  {documentsQuery.data.map((document) => (
-                    <li key={document.id} className="rounded-md border p-3 text-sm">
-                      <p className="font-medium">{textValue(document.filename)}</p>
-                      <p>Type: {formatStatus(document.documentType)}</p>
-                      <p>Status: {formatStatus(document.status)}</p>
-                      <p>Extraction: {formatStatus(document.extractionStatus)}</p>
-                      <p>Size: {formatBytes(document.sizeBytes)}</p>
-                      <p>Uploaded: {formatDate(document.createdAt)}</p>
-                    </li>
-                  ))}
+                  {documentsQuery.data.map((document) => {
+                    const fallbackFilename =
+                      textValue(document.filename) === "N/A"
+                        ? `document-${document.id}`
+                        : textValue(document.filename);
+                    const canOpenInline = isInlineViewableDocument(null, fallbackFilename);
+                    const isOpening = openingDocumentId === document.id;
+                    const isDownloading = downloadingDocumentId === document.id;
+
+                    return (
+                      <li key={document.id} className="rounded-md border p-3 text-sm">
+                        <p className="font-medium">{textValue(document.filename)}</p>
+                        <p>Type: {formatStatus(document.documentType)}</p>
+                        <p>Status: {formatStatus(document.status)}</p>
+                        <p>Extraction: {formatStatus(document.extractionStatus)}</p>
+                        <p>Size: {formatBytes(document.sizeBytes)}</p>
+                        <p>Uploaded: {formatDate(document.createdAt)}</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleOpenDocument(document.id, fallbackFilename);
+                            }}
+                            disabled={isOpening || isDownloading || !canOpenInline}
+                            title={
+                              canOpenInline ? undefined : "This file type cannot be opened inline."
+                            }
+                            className="rounded-md border px-3 py-1 text-xs font-medium disabled:opacity-60"
+                          >
+                            {isOpening ? "Opening..." : "Open"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleDownloadDocument(document.id, fallbackFilename);
+                            }}
+                            disabled={isOpening || isDownloading}
+                            className="rounded-md border px-3 py-1 text-xs font-medium disabled:opacity-60"
+                          >
+                            {isDownloading ? "Downloading..." : "Download"}
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
@@ -516,80 +619,100 @@ export default function AdminClaimDetailPage() {
               </div>
             )}
 
-            <div className="rounded-lg border p-4">
-              <h2 className="text-lg font-semibold">Review Actions</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                Use optional notes and missing docs to support review decisions.
-              </p>
-              {!canSubmitDecision && (
-                <p className="mt-2 text-sm text-amber-700">
-                  Claim must be in UNDER_REVIEW status before approve or reject.
+            {isReviewState && (
+              <div className="rounded-lg border p-4">
+                <h2 className="text-lg font-semibold">Review Actions</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Use optional notes and missing docs to support review decisions.
                 </p>
-              )}
-              <div className="mt-3 space-y-3">
-                <div className="space-y-1">
-                  <label htmlFor="decision-notes" className="block text-sm font-medium">
-                    Notes (optional)
-                  </label>
-                  <textarea
-                    id="decision-notes"
-                    value={notes}
-                    onChange={(event) => setNotes(event.target.value)}
-                    rows={3}
-                    className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black"
-                    placeholder="Add context for this review decision."
-                  />
+                <div className="mt-3 space-y-3">
+                  <div className="space-y-1">
+                    <label htmlFor="decision-notes" className="block text-sm font-medium">
+                      Notes (optional)
+                    </label>
+                    <textarea
+                      id="decision-notes"
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value)}
+                      rows={3}
+                      className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black"
+                      placeholder="Add context for this review decision."
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label htmlFor="missing-docs" className="block text-sm font-medium">
+                      Missing Docs (optional, comma-separated)
+                    </label>
+                    <input
+                      id="missing-docs"
+                      type="text"
+                      value={missingDocsInput}
+                      onChange={(event) => setMissingDocsInput(event.target.value)}
+                      className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black"
+                      placeholder="invoice, statement, authorization"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={isActionPending || !canSubmitDecision}
+                      onClick={() => {
+                        if (isActionPending || !canSubmitDecision) return;
+                        setDecisionInFlight("APPROVE");
+                        decisionMutation.mutate("APPROVE", {
+                          onSettled: () => setDecisionInFlight(null),
+                        });
+                      }}
+                      className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                    >
+                      {decisionMutation.isPending && decisionInFlight === "APPROVE"
+                        ? "Approving..."
+                        : "Approve"}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isActionPending || !canSubmitDecision}
+                      onClick={() => {
+                        if (isActionPending || !canSubmitDecision) return;
+                        setDecisionInFlight("REJECT");
+                        decisionMutation.mutate("REJECT", {
+                          onSettled: () => setDecisionInFlight(null),
+                        });
+                      }}
+                      className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                    >
+                      {decisionMutation.isPending && decisionInFlight === "REJECT"
+                        ? "Rejecting..."
+                        : "Reject"}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isActionPending}
+                      onClick={() => {
+                        if (isActionPending) return;
+                        const confirmed = window.confirm(
+                          "Are you sure you want to delete this claim? This action cannot be undone."
+                        );
+                        if (!confirmed) return;
+                        deleteClaimMutation.mutate();
+                      }}
+                      className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                    >
+                      {deleteClaimMutation.isPending ? "Deleting..." : "Delete Claim"}
+                    </button>
+                  </div>
                 </div>
+              </div>
+            )}
 
-                <div className="space-y-1">
-                  <label htmlFor="missing-docs" className="block text-sm font-medium">
-                    Missing Docs (optional, comma-separated)
-                  </label>
-                  <input
-                    id="missing-docs"
-                    type="text"
-                    value={missingDocsInput}
-                    onChange={(event) => setMissingDocsInput(event.target.value)}
-                    className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black"
-                    placeholder="invoice, statement, authorization"
-                  />
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={isActionPending || !canSubmitDecision}
-                    onClick={() => {
-                      if (isActionPending || !canSubmitDecision) return;
-                      setDecisionInFlight("APPROVE");
-                      decisionMutation.mutate("APPROVE", {
-                        onSettled: () => setDecisionInFlight(null),
-                      });
-                    }}
-                    className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
-                  >
-                    {decisionMutation.isPending && decisionInFlight === "APPROVE"
-                      ? "Approving..."
-                      : "Approve"}
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isActionPending || !canSubmitDecision}
-                    onClick={() => {
-                      if (isActionPending || !canSubmitDecision) return;
-                      setDecisionInFlight("REJECT");
-                      decisionMutation.mutate("REJECT", {
-                        onSettled: () => setDecisionInFlight(null),
-                      });
-                    }}
-                    className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
-                  >
-                    {decisionMutation.isPending && decisionInFlight === "REJECT"
-                      ? "Rejecting..."
-                      : "Reject"}
-                  </button>
-
+            {!isReviewState && (
+              <div className="rounded-lg border p-4">
+                <h2 className="text-lg font-semibold">Claim Actions</h2>
+                <div className="mt-3 flex flex-wrap gap-2">
                   {canRescore && (
                     <button
                       type="button"
@@ -637,7 +760,7 @@ export default function AdminClaimDetailPage() {
                   </button>
                 </div>
               </div>
-            </div>
+            )}
           </section>
         )}
 

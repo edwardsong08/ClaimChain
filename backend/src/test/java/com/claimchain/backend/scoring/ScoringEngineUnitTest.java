@@ -35,6 +35,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -359,6 +360,147 @@ class ScoringEngineUnitTest {
     }
 
     @Test
+    void scoreClaim_docReadyWithInvoiceEvidence_addsVisibleBonusAndOutscoresComparableNonInvoiceCase() throws Exception {
+        Long invoiceClaimId = 210L;
+        Long nonInvoiceClaimId = 211L;
+        Claim invoiceClaim = buildApprovedClaim(invoiceClaimId, DisputeStatus.NONE, new BigDecimal("2500.00"));
+        Claim nonInvoiceClaim = buildApprovedClaim(nonInvoiceClaimId, DisputeStatus.NONE, new BigDecimal("2500.00"));
+
+        List<ClaimDocument> invoiceEvidenceDocs = List.of(
+                buildDocument(DocumentType.INVOICE, ExtractionStatus.SUCCEEDED, 160),
+                buildDocument(DocumentType.CONTRACT, ExtractionStatus.SUCCEEDED, 120)
+        );
+        List<ClaimDocument> nonInvoiceDocs = List.of(
+                buildDocument(DocumentType.CONTRACT, ExtractionStatus.SUCCEEDED, 120),
+                buildDocument(DocumentType.OTHER, ExtractionStatus.SUCCEEDED, 120)
+        );
+
+        Ruleset ruleset = buildActiveRuleset(31L, 2, validScoringConfigV1());
+
+        when(claimRepository.findById(invoiceClaimId)).thenReturn(Optional.of(invoiceClaim));
+        when(claimRepository.findById(nonInvoiceClaimId)).thenReturn(Optional.of(nonInvoiceClaim));
+        when(claimDocumentRepository.findByClaimId(invoiceClaimId)).thenReturn(invoiceEvidenceDocs);
+        when(claimDocumentRepository.findByClaimId(nonInvoiceClaimId)).thenReturn(nonInvoiceDocs);
+        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+                .thenReturn(Optional.of(ruleset));
+        when(claimScoringPersistenceService.recordScoreRun(
+                any(),
+                eq(31L),
+                eq(2),
+                anyBoolean(),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                isNull(),
+                eq(ScoringTrigger.DOC_READY)
+        )).thenAnswer(invocation -> null);
+
+        scoringEngine.scoreClaim(invoiceClaimId, null, false, ScoringTrigger.DOC_READY);
+        scoringEngine.scoreClaim(nonInvoiceClaimId, null, false, ScoringTrigger.DOC_READY);
+
+        ArgumentCaptor<Long> claimIdCaptor = ArgumentCaptor.forClass(Long.class);
+        ArgumentCaptor<Integer> scoreCaptor = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<String> explainabilityCaptor = ArgumentCaptor.forClass(String.class);
+        verify(claimScoringPersistenceService, times(2)).recordScoreRun(
+                claimIdCaptor.capture(),
+                eq(31L),
+                eq(2),
+                eq(true),
+                scoreCaptor.capture(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                explainabilityCaptor.capture(),
+                anyString(),
+                isNull(),
+                eq(ScoringTrigger.DOC_READY)
+        );
+
+        int invoiceScore = -1;
+        int nonInvoiceScore = -1;
+        String invoiceExplainability = null;
+        String nonInvoiceExplainability = null;
+        for (int i = 0; i < claimIdCaptor.getAllValues().size(); i++) {
+            Long persistedClaimId = claimIdCaptor.getAllValues().get(i);
+            if (invoiceClaimId.equals(persistedClaimId)) {
+                invoiceScore = scoreCaptor.getAllValues().get(i);
+                invoiceExplainability = explainabilityCaptor.getAllValues().get(i);
+            } else if (nonInvoiceClaimId.equals(persistedClaimId)) {
+                nonInvoiceScore = scoreCaptor.getAllValues().get(i);
+                nonInvoiceExplainability = explainabilityCaptor.getAllValues().get(i);
+            }
+        }
+
+        assertThat(invoiceScore).isGreaterThan(nonInvoiceScore);
+
+        JsonNode invoiceContributions = objectMapper.readTree(invoiceExplainability).path("contributions");
+        assertThat(invoiceContributions.toString()).contains("Invoice document extracted successfully");
+        assertThat(invoiceContributions.toString()).contains("Invoice evidence corroborated by extracted contract");
+
+        JsonNode nonInvoiceContributions = objectMapper.readTree(nonInvoiceExplainability).path("contributions");
+        assertThat(nonInvoiceContributions.toString()).contains("Extraction healthy");
+        assertThat(nonInvoiceContributions.toString()).doesNotContain("Invoice document extracted successfully");
+    }
+
+    @Test
+    void scoreClaim_approvalWithoutDocs_doesNotApplyDocReadyInvoiceEvidenceBonus() throws Exception {
+        Long claimId = 212L;
+        Claim claim = buildApprovedClaim(claimId, DisputeStatus.NONE, new BigDecimal("2500.00"));
+        Ruleset ruleset = buildActiveRuleset(32L, 2, validScoringConfigV1());
+
+        when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
+        when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(List.of());
+        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+                .thenReturn(Optional.of(ruleset));
+        when(claimScoringPersistenceService.recordScoreRun(
+                eq(claimId),
+                eq(32L),
+                eq(2),
+                anyBoolean(),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(88L),
+                eq(ScoringTrigger.APPROVAL)
+        )).thenAnswer(invocation -> null);
+
+        scoringEngine.scoreClaim(claimId, 88L, false, ScoringTrigger.APPROVAL);
+
+        ArgumentCaptor<String> explainabilityCaptor = ArgumentCaptor.forClass(String.class);
+        verify(claimScoringPersistenceService).recordScoreRun(
+                eq(claimId),
+                eq(32L),
+                eq(2),
+                eq(true),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                explainabilityCaptor.capture(),
+                anyString(),
+                eq(88L),
+                eq(ScoringTrigger.APPROVAL)
+        );
+
+        JsonNode contributions = objectMapper.readTree(explainabilityCaptor.getValue()).path("contributions");
+        assertThat(contributions.toString()).doesNotContain("Invoice document extracted successfully");
+    }
+
+    @Test
     void scoreClaim_marksIneligibleClaimAsZeroAndF() throws Exception {
         Long claimId = 303L;
         Claim claim = buildApprovedClaim(claimId, DisputeStatus.ACTIVE, new BigDecimal("2000.00"));
@@ -516,9 +658,14 @@ class ScoringEngineUnitTest {
     }
 
     private ClaimDocument buildDocument(DocumentType type, ExtractionStatus extractionStatus) {
+        return buildDocument(type, extractionStatus, null);
+    }
+
+    private ClaimDocument buildDocument(DocumentType type, ExtractionStatus extractionStatus, Integer extractedCharCount) {
         ClaimDocument document = new ClaimDocument();
         document.setDocumentType(type);
         document.setExtractionStatus(extractionStatus);
+        document.setExtractedCharCount(extractedCharCount);
         return document;
     }
 

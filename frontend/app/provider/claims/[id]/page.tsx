@@ -7,7 +7,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import { getClaimById } from "@/services/claims";
-import { listClaimDocuments, uploadClaimDocument } from "@/services/documents";
+import {
+  downloadClaimDocument,
+  isInlineViewableDocument,
+  listClaimDocuments,
+  uploadClaimDocument,
+} from "@/services/documents";
 import type { Claim } from "@/types/claims";
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
@@ -188,6 +193,8 @@ export default function ClaimDetailPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [documentType, setDocumentType] =
     useState<(typeof DOCUMENT_TYPE_OPTIONS)[number]>("INVOICE");
+  const [openingDocumentId, setOpeningDocumentId] = useState<number | null>(null);
+  const [downloadingDocumentId, setDownloadingDocumentId] = useState<number | null>(null);
 
   const claimQuery = useQuery({
     queryKey: ["provider-claim", claimId, token],
@@ -249,6 +256,61 @@ export default function ClaimDetailPage() {
       toast.error(getErrorMessage(error, "Document upload failed."));
     },
   });
+
+  const handleOpenDocument = async (documentId: number, fallbackFilename: string) => {
+    if (!token) {
+      toast.error("You must be logged in to view claim documents.");
+      return;
+    }
+
+    setOpeningDocumentId(documentId);
+
+    try {
+      const { blob, filename, contentType } = await downloadClaimDocument(token, documentId);
+      const resolvedFilename = filename || fallbackFilename || `document-${documentId}`;
+      if (!isInlineViewableDocument(contentType, resolvedFilename)) {
+        toast.error("This file type cannot be opened inline. Use Download.");
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+      const openedWindow = window.open(objectUrl, "_blank", "noopener,noreferrer");
+      if (!openedWindow) {
+        toast.error("Popup blocked. Allow popups to open this document.");
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Unable to open document."));
+    } finally {
+      setOpeningDocumentId(null);
+    }
+  };
+
+  const handleDownloadDocument = async (documentId: number, fallbackFilename: string) => {
+    if (!token) {
+      toast.error("You must be logged in to view claim documents.");
+      return;
+    }
+
+    setDownloadingDocumentId(documentId);
+
+    try {
+      const { blob, filename } = await downloadClaimDocument(token, documentId);
+      const resolvedFilename = filename || fallbackFilename || `document-${documentId}`;
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = resolvedFilename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Unable to download document."));
+    } finally {
+      setDownloadingDocumentId(null);
+    }
+  };
 
   const handleUploadSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -463,18 +525,53 @@ export default function ClaimDetailPage() {
                     </p>
                   ) : (
                     <ul className="mt-2 space-y-2">
-                      {documentsQuery.data.map((document) => (
-                        <li key={document.id} className="rounded-md border p-3 text-sm">
-                          <p className="font-medium">{textValue(document.filename)}</p>
-                          <p>Type: {formatStatus(document.documentType)}</p>
-                          <p>Status: {formatStatus(document.status)}</p>
-                          <p>
-                            Extraction: {formatStatus(document.extractionStatus)}
-                          </p>
-                          <p>Size: {formatBytes(document.sizeBytes)}</p>
-                          <p>Uploaded: {formatDate(document.createdAt)}</p>
-                        </li>
-                      ))}
+                      {documentsQuery.data.map((document) => {
+                        const fallbackFilename =
+                          textValue(document.filename) === "N/A"
+                            ? `document-${document.id}`
+                            : textValue(document.filename);
+                        const canOpenInline = isInlineViewableDocument(null, fallbackFilename);
+                        const isOpening = openingDocumentId === document.id;
+                        const isDownloading = downloadingDocumentId === document.id;
+
+                        return (
+                          <li key={document.id} className="rounded-md border p-3 text-sm">
+                            <p className="font-medium">{textValue(document.filename)}</p>
+                            <p>Type: {formatStatus(document.documentType)}</p>
+                            <p>Status: {formatStatus(document.status)}</p>
+                            <p>Extraction: {formatStatus(document.extractionStatus)}</p>
+                            <p>Size: {formatBytes(document.sizeBytes)}</p>
+                            <p>Uploaded: {formatDate(document.createdAt)}</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void handleOpenDocument(document.id, fallbackFilename);
+                                }}
+                                disabled={isOpening || isDownloading || !canOpenInline}
+                                title={
+                                  canOpenInline
+                                    ? undefined
+                                    : "This file type cannot be opened inline."
+                                }
+                                className="rounded-md border px-3 py-1 text-xs font-medium disabled:opacity-60"
+                              >
+                                {isOpening ? "Opening..." : "Open"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void handleDownloadDocument(document.id, fallbackFilename);
+                                }}
+                                disabled={isOpening || isDownloading}
+                                className="rounded-md border px-3 py-1 text-xs font-medium disabled:opacity-60"
+                              >
+                                {isDownloading ? "Downloading..." : "Download"}
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </div>

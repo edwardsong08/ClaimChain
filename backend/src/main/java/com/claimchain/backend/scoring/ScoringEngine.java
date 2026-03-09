@@ -5,6 +5,7 @@ import com.claimchain.backend.model.ClaimDocument;
 import com.claimchain.backend.model.ClaimScore;
 import com.claimchain.backend.model.ClaimStatus;
 import com.claimchain.backend.model.DisputeStatus;
+import com.claimchain.backend.model.DocumentType;
 import com.claimchain.backend.model.ExtractionStatus;
 import com.claimchain.backend.model.Ruleset;
 import com.claimchain.backend.model.RulesetStatus;
@@ -41,6 +42,11 @@ public class ScoringEngine {
     private static final String GROUP_DOCUMENTATION = "documentation";
     private static final String GROUP_COLLECTABILITY = "collectability";
     private static final String GROUP_OPERATIONAL_RISK = "operationalrisk";
+    private static final String GROUP_DOCUMENTATION_LABEL = "documentation";
+    private static final int DOC_READY_INVOICE_PRESENT_POINTS = 4;
+    private static final int DOC_READY_INVOICE_TEXT_EVIDENCE_POINTS = 3;
+    private static final int DOC_READY_INVOICE_CONTRACT_CORROBORATION_POINTS = 2;
+    private static final int MIN_SUBSTANTIVE_EXTRACTED_CHAR_COUNT = 40;
 
     private final ClaimRepository claimRepository;
     private final ClaimDocumentRepository claimDocumentRepository;
@@ -234,6 +240,10 @@ public class ScoringEngine {
             contribution.setReason(rule.getReason());
             contribution.setFieldsUsed(fieldsUsed);
             contributions.add(contribution);
+        }
+
+        if (trigger == ScoringTrigger.DOC_READY) {
+            documentation += applyDocReadyEvidenceBonuses(documents, contributions);
         }
 
         ScoringRulesetConfig.CapsConfig caps = config.getCaps();
@@ -451,6 +461,95 @@ public class ScoringEngine {
         }
 
         return true;
+    }
+
+    private int applyDocReadyEvidenceBonuses(List<ClaimDocument> documents, List<ScoringContribution> contributions) {
+        if (documents == null || documents.isEmpty()) {
+            return 0;
+        }
+
+        int extractedInvoiceCount = 0;
+        int extractedContractCount = 0;
+        int invoiceWithSubstantiveTextCount = 0;
+        int maxInvoiceExtractedChars = 0;
+
+        for (ClaimDocument document : documents) {
+            if (document == null || document.getDocumentType() == null || document.getExtractionStatus() != ExtractionStatus.SUCCEEDED) {
+                continue;
+            }
+
+            DocumentType documentType = document.getDocumentType();
+            if (documentType == DocumentType.INVOICE) {
+                extractedInvoiceCount++;
+                int extractedChars = document.getExtractedCharCount() == null ? 0 : document.getExtractedCharCount();
+                maxInvoiceExtractedChars = Math.max(maxInvoiceExtractedChars, extractedChars);
+                if (extractedChars >= MIN_SUBSTANTIVE_EXTRACTED_CHAR_COUNT) {
+                    invoiceWithSubstantiveTextCount++;
+                }
+            } else if (documentType == DocumentType.CONTRACT) {
+                extractedContractCount++;
+            }
+        }
+
+        int bonus = 0;
+        if (extractedInvoiceCount > 0) {
+            bonus += DOC_READY_INVOICE_PRESENT_POINTS;
+            Map<String, Object> fieldsUsed = new LinkedHashMap<>();
+            fieldsUsed.put("invoiceExtractedCount", extractedInvoiceCount);
+            addContribution(
+                    contributions,
+                    "DOC_READY_INVOICE_PRESENT",
+                    DOC_READY_INVOICE_PRESENT_POINTS,
+                    "Invoice document extracted successfully",
+                    fieldsUsed
+            );
+        }
+
+        if (invoiceWithSubstantiveTextCount > 0) {
+            bonus += DOC_READY_INVOICE_TEXT_EVIDENCE_POINTS;
+            Map<String, Object> fieldsUsed = new LinkedHashMap<>();
+            fieldsUsed.put("invoiceWithSubstantiveTextCount", invoiceWithSubstantiveTextCount);
+            fieldsUsed.put("maxInvoiceExtractedCharCount", maxInvoiceExtractedChars);
+            addContribution(
+                    contributions,
+                    "DOC_READY_INVOICE_TEXT_EVIDENCE",
+                    DOC_READY_INVOICE_TEXT_EVIDENCE_POINTS,
+                    "Invoice extraction contains substantive evidence text",
+                    fieldsUsed
+            );
+        }
+
+        if (extractedInvoiceCount > 0 && extractedContractCount > 0) {
+            bonus += DOC_READY_INVOICE_CONTRACT_CORROBORATION_POINTS;
+            Map<String, Object> fieldsUsed = new LinkedHashMap<>();
+            fieldsUsed.put("invoiceExtractedCount", extractedInvoiceCount);
+            fieldsUsed.put("contractExtractedCount", extractedContractCount);
+            addContribution(
+                    contributions,
+                    "DOC_READY_CORROBORATING_PRIMARY_DOCS",
+                    DOC_READY_INVOICE_CONTRACT_CORROBORATION_POINTS,
+                    "Invoice evidence corroborated by extracted contract",
+                    fieldsUsed
+            );
+        }
+
+        return bonus;
+    }
+
+    private void addContribution(
+            List<ScoringContribution> contributions,
+            String ruleId,
+            int points,
+            String reason,
+            Map<String, Object> fieldsUsed
+    ) {
+        ScoringContribution contribution = new ScoringContribution();
+        contribution.setRuleId(ruleId);
+        contribution.setGroup(GROUP_DOCUMENTATION_LABEL);
+        contribution.setDelta(points);
+        contribution.setReason(reason);
+        contribution.setFieldsUsed(fieldsUsed);
+        contributions.add(contribution);
     }
 
     private String normalizeGroup(String group) {
