@@ -142,11 +142,6 @@ public class ScoringEngine {
             return false;
         }
 
-        Optional<ClaimScore> latestScoreOpt = claimScoreRepository.findFirstByClaimIdOrderByScoredAtDesc(claim.getId());
-        if (latestScoreOpt.isPresent() && latestScoreOpt.get().isEligible()) {
-            return false;
-        }
-
         scoreClaim(claim.getId(), null, false, ScoringTrigger.DOC_READY);
         return true;
     }

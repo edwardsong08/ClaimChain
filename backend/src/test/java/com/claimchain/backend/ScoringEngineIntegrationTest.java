@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -276,6 +277,47 @@ class ScoringEngineIntegrationTest {
         assertThat(score.getScoreTotal()).isGreaterThan(0);
         JsonNode explainability = objectMapper.readTree(score.getExplainabilityJson());
         assertThat(explainability.path("trigger").asText()).isEqualTo("DOC_READY");
+
+        JsonNode claimBody = fetchClaim(claimId);
+        assertThat(claimBody.path("scoreTrigger").asText()).isEqualTo("DOC_READY");
+    }
+
+    @Test
+    void returnToReview_thenReapproveWithPendingDocs_supersedesOldApprovalScoreWithDocReady() throws Exception {
+        createAndActivateScoringRuleset(SCORING_CONFIG_V1, 1);
+        Long claimId = createClaim("NONE");
+
+        startReview(claimId);
+        approve(claimId);
+
+        List<ClaimScore> firstApprovalScores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        assertThat(firstApprovalScores).hasSize(1);
+        JsonNode firstApprovalExplainability = objectMapper.readTree(firstApprovalScores.get(0).getExplainabilityJson());
+        assertThat(firstApprovalExplainability.path("trigger").asText()).isEqualTo("APPROVAL");
+
+        returnToReview(claimId);
+        uploadRequiredDocuments(claimId);
+        approve(claimId);
+
+        Instant deadline = Instant.now().plusSeconds(10);
+        List<ClaimScore> scores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        while (Instant.now().isBefore(deadline)) {
+            if (!scores.isEmpty()) {
+                JsonNode latestExplainability = objectMapper.readTree(scores.get(0).getExplainabilityJson());
+                if ("DOC_READY".equals(latestExplainability.path("trigger").asText())) {
+                    break;
+                }
+            }
+            Thread.sleep(100);
+            scores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        }
+
+        assertThat(scores.size()).isGreaterThanOrEqualTo(2);
+        JsonNode latestExplainability = objectMapper.readTree(scores.get(0).getExplainabilityJson());
+        assertThat(latestExplainability.path("trigger").asText()).isEqualTo("DOC_READY");
+
+        JsonNode claimBody = fetchClaim(claimId);
+        assertThat(claimBody.path("scoreTrigger").asText()).isEqualTo("DOC_READY");
     }
 
     @Test
@@ -442,6 +484,16 @@ class ScoringEngineIntegrationTest {
                 .andExpect(jsonPath("$.status").value("APPROVED"));
     }
 
+    private void returnToReview(Long claimId) throws Exception {
+        mockMvc.perform(
+                        post("/api/admin/claims/{claimId}/return-to-review", claimId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value("UNDER_REVIEW"));
+    }
+
     private void reject(Long claimId) throws Exception {
         mockMvc.perform(
                         post("/api/admin/claims/{claimId}/decision", claimId)
@@ -479,6 +531,17 @@ class ScoringEngineIntegrationTest {
 
         JsonNode body = objectMapper.readTree(loginResult.getResponse().getContentAsString());
         return body.get("accessToken").asText();
+    }
+
+    private JsonNode fetchClaim(Long claimId) throws Exception {
+        MvcResult claimResult = mockMvc.perform(
+                        get("/api/claims/{id}", claimId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+        return objectMapper.readTree(claimResult.getResponse().getContentAsString());
     }
 
     private byte[] minimalPngBytes() {

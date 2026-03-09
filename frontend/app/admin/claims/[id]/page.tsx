@@ -14,6 +14,7 @@ import {
   returnClaimToReview,
 } from "@/services/admin";
 import { listClaimDocuments } from "@/services/documents";
+import { canShowRescore } from "@/lib/claim-status";
 import type { AdminClaimDecision } from "@/types/admin";
 import type { Claim } from "@/types/claims";
 
@@ -367,6 +368,7 @@ export default function AdminClaimDetailPage() {
   const canSubmitDecision = claim?.status === "UNDER_REVIEW";
   const canReturnToReview =
     claim?.status === "APPROVED" || claim?.status === "REJECTED";
+  const canRescore = canShowRescore(claim?.status);
   const isActionPending =
     decisionMutation.isPending ||
     rescoreMutation.isPending ||
@@ -588,17 +590,19 @@ export default function AdminClaimDetailPage() {
                       : "Reject"}
                   </button>
 
-                  <button
-                    type="button"
-                    disabled={isActionPending}
-                    onClick={() => {
-                      if (isActionPending) return;
-                      rescoreMutation.mutate();
-                    }}
-                    className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
-                  >
-                    {rescoreMutation.isPending ? "Rescoring..." : "Rescore"}
-                  </button>
+                  {canRescore && (
+                    <button
+                      type="button"
+                      disabled={isActionPending}
+                      onClick={() => {
+                        if (isActionPending) return;
+                        rescoreMutation.mutate();
+                      }}
+                      className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                    >
+                      {rescoreMutation.isPending ? "Rescoring..." : "Rescore"}
+                    </button>
+                  )}
 
                   {canReturnToReview && (
                     <button
