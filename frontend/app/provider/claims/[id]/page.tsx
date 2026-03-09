@@ -364,6 +364,8 @@ export default function ClaimDetailPage() {
                         Extraction Success:{" "}
                         {formatPercent(claimQuery.data.extractionSuccessRate)}
                       </p>
+                      <p>Scored At: {formatDate(claimQuery.data.scoredAt)}</p>
+                      <p>Score Trigger: {textValue(claimQuery.data.scoreTrigger)}</p>
                     </div>
 
                     {getScoreBreakdownItems(claimQuery.data).length > 0 && (

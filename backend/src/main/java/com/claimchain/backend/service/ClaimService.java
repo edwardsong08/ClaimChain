@@ -22,12 +22,14 @@ import com.claimchain.backend.model.Role;
 import com.claimchain.backend.model.User;
 import com.claimchain.backend.model.VerificationStatus;
 import com.claimchain.backend.repository.ClaimRepository;
+import com.claimchain.backend.repository.ClaimScoreRepository;
 import com.claimchain.backend.repository.ClaimDocumentRepository;
 import com.claimchain.backend.repository.DocumentJobRepository;
 import com.claimchain.backend.repository.UserRepository;
 import com.claimchain.backend.scoring.ScoringEngine;
 import com.claimchain.backend.scoring.ScoringTrigger;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.claimchain.backend.security.AuthorizationService;
 import com.claimchain.backend.security.FilenameSanitizer;
@@ -71,6 +73,9 @@ public class ClaimService {
 
     @Autowired
     private ClaimDocumentRepository claimDocumentRepository;
+
+    @Autowired
+    private ClaimScoreRepository claimScoreRepository;
 
     @Autowired
     private DocumentJobRepository documentJobRepository;
@@ -492,8 +497,67 @@ public class ClaimService {
         dto.setStatus(claim.getStatus() != null ? claim.getStatus().name() : null);
         dto.setSubmittedAt(claim.getSubmittedAt() != null ? claim.getSubmittedAt().toString() : null);
         dto.setSubmittedBy(claim.getUser() != null ? claim.getUser().getName() : null);
+        applyLatestScoreToDTO(claim, dto);
 
         return dto;
+    }
+
+    private void applyLatestScoreToDTO(Claim claim, ClaimResponseDTO dto) {
+        if (claim == null || claim.getId() == null) {
+            return;
+        }
+
+        claimScoreRepository.findFirstByClaimIdOrderByScoredAtDesc(claim.getId()).ifPresent(score -> {
+            dto.setEligible(score.isEligible());
+            dto.setScoreTotal(score.getScoreTotal());
+            dto.setGrade(score.getGrade());
+            dto.setSubscoreEnforceability(score.getSubscoreEnforceability());
+            dto.setSubscoreDocumentation(score.getSubscoreDocumentation());
+            dto.setSubscoreCollectability(score.getSubscoreCollectability());
+            dto.setSubscoreOperationalRisk(score.getSubscoreOperationalRisk());
+            dto.setExplainabilityJson(score.getExplainabilityJson());
+            dto.setFeatureSnapshotJson(score.getFeatureSnapshotJson());
+            dto.setScoredAt(score.getScoredAt() == null ? null : score.getScoredAt().toString());
+            dto.setExtractionSuccessRate(extractExtractionSuccessRate(score.getFeatureSnapshotJson()));
+            dto.setScoreTrigger(extractScoreTrigger(score.getExplainabilityJson()));
+        });
+    }
+
+    private Double extractExtractionSuccessRate(String featureSnapshotJson) {
+        if (featureSnapshotJson == null || featureSnapshotJson.isBlank()) {
+            return null;
+        }
+
+        try {
+            JsonNode parsed = objectMapper.readTree(featureSnapshotJson);
+            JsonNode valueNode = parsed.path("extractionSuccessRate");
+            if (valueNode.isNumber()) {
+                return valueNode.doubleValue();
+            }
+        } catch (JsonProcessingException ignored) {
+            return null;
+        }
+
+        return null;
+    }
+
+    private String extractScoreTrigger(String explainabilityJson) {
+        if (explainabilityJson == null || explainabilityJson.isBlank()) {
+            return null;
+        }
+
+        try {
+            JsonNode parsed = objectMapper.readTree(explainabilityJson);
+            JsonNode triggerNode = parsed.path("trigger");
+            if (triggerNode.isTextual()) {
+                String triggerValue = triggerNode.textValue();
+                return triggerValue == null || triggerValue.isBlank() ? null : triggerValue;
+            }
+        } catch (JsonProcessingException ignored) {
+            return null;
+        }
+
+        return null;
     }
 
     private ClaimDocumentResponseDTO mapDocumentToDTO(ClaimDocument document) {

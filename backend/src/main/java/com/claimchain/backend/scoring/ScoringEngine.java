@@ -118,12 +118,6 @@ public class ScoringEngine {
         if (!canAutoTriggerForStatus(claim.getStatus())) {
             return false;
         }
-        ScoringRulesetConfig config = parseConfig(activeRulesetOpt.get().getConfigJson());
-        List<ClaimDocument> documents = claimDocumentRepository.findByClaimId(claim.getId());
-
-        if (!isReadyForAutoScoring(documents, config)) {
-            return false;
-        }
 
         scoreClaim(claim.getId(), scoredByUserIdNullable, false, ScoringTrigger.APPROVAL);
         return true;

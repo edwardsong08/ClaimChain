@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -256,6 +257,83 @@ class ScoringEngineUnitTest {
         JsonNode explainability = objectMapper.readTree(explainabilityCaptor.getValue());
         assertThat(explainability.path("eligibleReasons").isArray()).isTrue();
         assertThat(explainability.path("eligibleReasons").toString()).contains("Active dispute");
+    }
+
+    @Test
+    void autoScoreOnApprovalIfReady_scoresApprovedClaimEvenWhenReadinessInputsAreMissing() {
+        Long claimId = 404L;
+        Claim claim = buildApprovedClaim(claimId, DisputeStatus.NONE, new BigDecimal("1800.00"));
+        Ruleset ruleset = buildActiveRuleset(44L, 1, validScoringConfigV1());
+
+        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+                .thenReturn(Optional.of(ruleset));
+        when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
+        when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(List.of());
+        when(claimScoringPersistenceService.recordScoreRun(
+                eq(claimId),
+                eq(44L),
+                eq(1),
+                anyBoolean(),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(42L),
+                eq(ScoringTrigger.APPROVAL)
+        )).thenAnswer(invocation -> null);
+
+        boolean scored = scoringEngine.autoScoreOnApprovalIfReady(claimId, 42L);
+
+        assertThat(scored).isTrue();
+        verify(claimScoringPersistenceService, times(1)).recordScoreRun(
+                eq(claimId),
+                eq(44L),
+                eq(1),
+                anyBoolean(),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(42L),
+                eq(ScoringTrigger.APPROVAL)
+        );
+    }
+
+    @Test
+    void autoScoreOnApprovalIfReady_doesNotScoreWhenClaimIsNotApproved() {
+        Long claimId = 505L;
+        Claim claim = buildApprovedClaim(claimId, DisputeStatus.NONE, new BigDecimal("1200.00"));
+        claim.setStatus(ClaimStatus.UNDER_REVIEW);
+        Ruleset ruleset = buildActiveRuleset(55L, 1, validScoringConfigV1());
+
+        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+                .thenReturn(Optional.of(ruleset));
+        when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
+
+        boolean scored = scoringEngine.autoScoreOnApprovalIfReady(claimId, 9L);
+
+        assertThat(scored).isFalse();
+        verifyNoInteractions(claimScoringPersistenceService);
+    }
+
+    @Test
+    void autoScoreOnApprovalIfReady_returnsFalseWhenNoActiveRulesetExists() {
+        Long claimId = 606L;
+        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        boolean scored = scoringEngine.autoScoreOnApprovalIfReady(claimId, 77L);
+
+        assertThat(scored).isFalse();
+        verifyNoInteractions(claimScoringPersistenceService);
     }
 
     private Claim buildApprovedClaim(Long id, DisputeStatus disputeStatus, BigDecimal currentAmount) {

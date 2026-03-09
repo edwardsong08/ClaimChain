@@ -4,7 +4,7 @@
 
 ClaimChain’s v1 packaging creates **buyer-ready portfolios** of claims that are:
 
-- **Eligible** (approved, scored, doc-ready)
+- **Eligible** (approved, already scored, and buyer-ready)
 - **Diversified** (avoid concentration risk)
 - **Deterministically constructed** (same inputs + same ruleset → same package composition)
 - **Traceable** (why each claim was included/excluded is explainable)
@@ -41,6 +41,8 @@ A claim is eligible for packaging only if:
 7) Claim is not already packaged (no duplicates), unless later rules explicitly allow it
 
 If any hard gate fails, the claim is excluded from the candidate pool.
+
+Packaging eligibility is intentionally stricter than scoring eligibility. In v1, an APPROVED claim should generally receive a score, but only a subset of scored claims should qualify for packaging. Packaging therefore acts as the buyer-readiness filter.
 
 ---
 

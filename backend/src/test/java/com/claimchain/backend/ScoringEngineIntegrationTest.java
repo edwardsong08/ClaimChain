@@ -229,6 +229,46 @@ class ScoringEngineIntegrationTest {
     }
 
     @Test
+    void approvalWithoutReadyDocuments_stillCreatesScoreRecord() throws Exception {
+        createAndActivateScoringRuleset(SCORING_CONFIG_V1, 1);
+        Long claimId = createClaim("NONE");
+
+        startReview(claimId);
+        approve(claimId);
+
+        List<ClaimScore> scores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        assertThat(scores).hasSize(1);
+
+        ClaimScore score = scores.get(0);
+        assertThat(score.getScoreTotal()).isNotNull();
+        JsonNode explainability = objectMapper.readTree(score.getExplainabilityJson());
+        assertThat(explainability.path("trigger").asText()).isEqualTo("APPROVAL");
+    }
+
+    @Test
+    void rejectDecision_doesNotCreateAutomaticScore() throws Exception {
+        createAndActivateScoringRuleset(SCORING_CONFIG_V1, 1);
+        Long claimId = createClaim("NONE");
+
+        startReview(claimId);
+        reject(claimId);
+
+        List<ClaimScore> scores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        assertThat(scores).isEmpty();
+    }
+
+    @Test
+    void approvalWithoutActiveScoringRuleset_succeedsWithoutCreatingScore() throws Exception {
+        Long claimId = createClaim("NONE");
+
+        startReview(claimId);
+        approve(claimId);
+
+        List<ClaimScore> scores = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
+        assertThat(scores).isEmpty();
+    }
+
+    @Test
     void nonAdminRescoreEndpoint_isForbidden() throws Exception {
         createAndActivateScoringRuleset(SCORING_CONFIG_V1, 1);
         Long claimId = createClaim("NONE");
@@ -367,6 +407,18 @@ class ScoringEngineIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value("APPROVED"));
+    }
+
+    private void reject(Long claimId) throws Exception {
+        mockMvc.perform(
+                        post("/api/admin/claims/{claimId}/decision", claimId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"decision\":\"REJECT\",\"notes\":\"Rejected for test\"}")
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value("REJECTED"));
     }
 
     private User createUser(String email, Role role, VerificationStatus verificationStatus) {

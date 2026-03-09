@@ -45,10 +45,14 @@ export type Claim = {
   status?: string | null;
   submittedAt?: string | null;
   submittedBy?: string | null;
+  eligible?: boolean | null;
   scoreTotal?: number | null;
   grade?: string | null;
   extractionSuccessRate?: number | null;
   explainabilityJson?: string | null;
+  featureSnapshotJson?: string | null;
+  scoredAt?: string | null;
+  scoreTrigger?: string | null;
   scoreBreakdown?: string[] | null;
   scoringFactors?: string[] | null;
   subscoreEnforceability?: number | null;

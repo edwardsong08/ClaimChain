@@ -2,8 +2,6 @@
   "schemaVersion": 1,
   "eligibility": {
     "requiredClaimStatus": "APPROVED",
-    "requiredDocTypes": ["INVOICE", "CONTRACT"],
-    "minExtractionSuccessRate": 0.6,
     "blockActiveDisputes": true
   },
   "weights": {

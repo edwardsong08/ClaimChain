@@ -12,6 +12,7 @@ ClaimChain’s v1 scoring is a deterministic, rules-based underwriting score des
 
 This v1 model is intentionally “rules-first.” ML is added later as a governed augmentation with strict fallback to rules.
 
+Scoring and packaging are intentionally separate: an APPROVED claim should receive a score even if it is not yet buyer-ready for packaging.
 ---
 
 ## Outputs (persisted per scoring run)
@@ -34,18 +35,18 @@ Scoring history is **append-only** in `claim_scores`. “Current score” is the
 
 ---
 
-## Eligibility gates (ineligible → score=0, grade=F)
+## Eligibility gates (minimal v1 gating)
 
-A claim is eligible only if all configured gates pass:
+ClaimChain v1 scoring is intentionally broad for approved claims.
+
+A claim is eligible for authoritative scoring if:
 
 1) Claim is in required status (v1: `APPROVED`)
-2) Required document types are present (configured per ruleset)
-3) Document processing readiness:
-   - extraction success rate meets configured minimum (or extraction not required if ruleset allows)
-4) Dispute gating:
-   - if ruleset blocks active disputes and `disputeStatus == ACTIVE`, the claim is ineligible
+2) If the active ruleset blocks active disputes, `disputeStatus != ACTIVE`
 
-If ineligible:
+Missing documents, weak extraction, incomplete metadata, or sparse supporting information do **not** prevent score creation. Instead, those conditions must be reflected through lower subscores, lower total score, and explainability output.
+
+If a claim is ineligible under the minimal gates above:
 - persist a score run with `eligible=false`, `scoreTotal=0`, `grade="F"`
 - include `eligibleReasons[]` in explainability
 
@@ -101,7 +102,7 @@ This v1 spec only relies on fields that exist in the platform now:
 
 **Documents**
 - document count (`docCount`)
-- required doc types present (`requiredDocTypesPresent`)
+- required doc types present (`requiredDocTypesPresent`) as scoring inputs, not hard scoring gates
 - extraction status per doc (`extractionStatus`)
 - extracted char counts (`extractedCharCount`)
 - computed extraction success rate (`extractionSuccessRate`)

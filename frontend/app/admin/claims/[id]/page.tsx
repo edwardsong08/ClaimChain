@@ -491,6 +491,8 @@ export default function AdminClaimDetailPage() {
                       <p>Score: {typeof claim.scoreTotal === "number" ? claim.scoreTotal : "N/A"}</p>
                       <p>Grade: {textValue(claim.grade)}</p>
                       <p>Extraction Success: {formatPercent(claim.extractionSuccessRate)}</p>
+                      <p>Scored At: {formatDate(claim.scoredAt)}</p>
+                      <p>Score Trigger: {textValue(claim.scoreTrigger)}</p>
                     </div>
 
                     {getScoreBreakdownItems(claim).length > 0 && (

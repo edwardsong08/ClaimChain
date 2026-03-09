@@ -38,4 +38,18 @@ public class ClaimResponseDTO {
     private String status;
     private String submittedAt;
     private String submittedBy;
+
+    // Latest score (if available)
+    private Boolean eligible;
+    private Integer scoreTotal;
+    private String grade;
+    private Integer subscoreEnforceability;
+    private Integer subscoreDocumentation;
+    private Integer subscoreCollectability;
+    private Integer subscoreOperationalRisk;
+    private Double extractionSuccessRate;
+    private String explainabilityJson;
+    private String featureSnapshotJson;
+    private String scoredAt;
+    private String scoreTrigger;
 }
