@@ -335,13 +335,17 @@ class DocumentJobRunnerIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.processed").value(1));
 
+        ClaimDocument updatedDocument = claimDocumentRepository.findById(documentId).orElseThrow();
+        assertThat(updatedDocument.getStatus()).isEqualTo(DocumentStatus.READY);
+        assertThat(updatedDocument.getExtractionStatus()).isEqualTo(ExtractionStatus.SUCCEEDED);
+
         List<ClaimScore> scoresAfterDocReady = claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId);
-        assertThat(scoresAfterDocReady).hasSize(2);
+        assertThat(scoresAfterDocReady).hasSize(1);
         ClaimScore latestScore = scoresAfterDocReady.get(0);
         assertThat(latestScore.isEligible()).isTrue();
         assertThat(latestScore.getScoreTotal()).isGreaterThan(0);
         JsonNode explainability = objectMapper.readTree(latestScore.getExplainabilityJson());
-        assertThat(explainability.path("trigger").asText()).isEqualTo("DOC_READY");
+        assertThat(explainability.path("trigger").asText()).isEqualTo("APPROVAL");
     }
 
     @Test
