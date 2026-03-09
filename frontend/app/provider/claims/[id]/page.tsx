@@ -347,41 +347,43 @@ export default function ClaimDetailPage() {
               </div>
             </div>
 
-            <div className="rounded-lg border p-4">
-              <h2 className="text-lg font-semibold">Claim Score</h2>
-              {hasScoreData(claimQuery.data) ? (
-                <>
-                  <div className="mt-2 grid gap-2 text-sm">
-                    <p>
-                      Score:{" "}
-                      {typeof claimQuery.data.scoreTotal === "number"
-                        ? claimQuery.data.scoreTotal
-                        : "N/A"}
-                    </p>
-                    <p>Grade: {textValue(claimQuery.data.grade)}</p>
-                    <p>
-                      Extraction Success:{" "}
-                      {formatPercent(claimQuery.data.extractionSuccessRate)}
-                    </p>
-                  </div>
-
-                  {getScoreBreakdownItems(claimQuery.data).length > 0 && (
-                    <div className="mt-4">
-                      <h3 className="text-sm font-semibold">Score Breakdown</h3>
-                      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-                        {getScoreBreakdownItems(claimQuery.data).map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
+            {claimQuery.data.status === "APPROVED" && (
+              <div className="rounded-lg border p-4">
+                <h2 className="text-lg font-semibold">Claim Score</h2>
+                {hasScoreData(claimQuery.data) ? (
+                  <>
+                    <div className="mt-2 grid gap-2 text-sm">
+                      <p>
+                        Score:{" "}
+                        {typeof claimQuery.data.scoreTotal === "number"
+                          ? claimQuery.data.scoreTotal
+                          : "N/A"}
+                      </p>
+                      <p>Grade: {textValue(claimQuery.data.grade)}</p>
+                      <p>
+                        Extraction Success:{" "}
+                        {formatPercent(claimQuery.data.extractionSuccessRate)}
+                      </p>
                     </div>
-                  )}
-                </>
-              ) : (
-                <p className="mt-1 text-sm text-gray-600">
-                  Scoring pending. Scores are generated after claim review.
-                </p>
-              )}
-            </div>
+
+                    {getScoreBreakdownItems(claimQuery.data).length > 0 && (
+                      <div className="mt-4">
+                        <h3 className="text-sm font-semibold">Score Breakdown</h3>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                          {getScoreBreakdownItems(claimQuery.data).map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="mt-1 text-sm text-gray-600">
+                    Scoring pending. Scores are generated after claim review.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="rounded-lg border p-4">
               <h2 className="text-lg font-semibold">Documents</h2>

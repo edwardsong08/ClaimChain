@@ -14,14 +14,18 @@ export type AdminClaim = {
   status?: string | null;
 };
 
-export type AdminClaimStatus = "SUBMITTED" | "UNDER_REVIEW";
+export type AdminClaimStatus =
+  | "SUBMITTED"
+  | "UNDER_REVIEW"
+  | "APPROVED"
+  | "REJECTED";
 
 export type AdminClaimDecision = "APPROVE" | "REJECT";
 
 export type AdminClaimDecisionRequest = {
   decision: AdminClaimDecision;
-  notes?: string | null;
-  missingDocs?: string[] | null;
+  notes: string;
+  missingDocs: string[];
 };
 
 export type AdminSubmittedClaim = AdminClaim;

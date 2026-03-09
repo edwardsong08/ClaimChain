@@ -129,6 +129,16 @@ public class AdminController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/claims/{claimId}/return-to-review")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ClaimResponseDTO> returnClaimToReview(
+            @PathVariable Long claimId,
+            Principal principal
+    ) {
+        ClaimResponseDTO response = claimService.returnToReview(claimId, principal.getName());
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping("/claims/{claimId}/override-freeze")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> requestClaimFreezeOverride(
@@ -156,6 +166,16 @@ public class AdminController {
             Principal principal
     ) {
         claimService.rescoreClaim(claimId, principal.getName());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/claims/{claimId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> deleteClaim(
+            @PathVariable Long claimId,
+            Principal principal
+    ) {
+        claimService.deleteClaimAsAdmin(claimId, principal.getName());
         return ResponseEntity.noContent().build();
     }
 

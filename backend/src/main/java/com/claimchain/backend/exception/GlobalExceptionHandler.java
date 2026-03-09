@@ -135,7 +135,11 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.CONFLICT, "CLAIM_FROZEN", ex.getMessage(), List.of(ex.getMessage()), request);
     }
 
-    @ExceptionHandler({PackageService.PackageNotFoundException.class, PackageService.ClaimNotFoundException.class})
+    @ExceptionHandler({
+            PackageService.PackageNotFoundException.class,
+            PackageService.ClaimNotFoundException.class,
+            ClaimService.ClaimNotFoundException.class
+    })
     public ResponseEntity<ApiErrorResponse> handlePackageNotFound(
             RuntimeException ex,
             HttpServletRequest request

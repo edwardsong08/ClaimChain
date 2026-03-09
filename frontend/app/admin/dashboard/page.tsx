@@ -6,9 +6,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import {
+  deleteClaim,
+  listApprovedClaims,
   listInReviewClaims,
+  listRejectedClaims,
   listSubmittedClaims,
   listUnverifiedUsers,
+  returnClaimToReview,
   startReviewClaim,
   verifyUser,
 } from "@/services/admin";
@@ -64,6 +68,8 @@ export default function AdminDashboardPage() {
 
   const [verifyingUserId, setVerifyingUserId] = useState<number | null>(null);
   const [reviewingClaimId, setReviewingClaimId] = useState<number | null>(null);
+  const [returningClaimId, setReturningClaimId] = useState<number | null>(null);
+  const [deletingClaimId, setDeletingClaimId] = useState<number | null>(null);
 
   const pendingUsersQuery = useQuery({
     queryKey: ["admin-unverified-users", token],
@@ -94,6 +100,28 @@ export default function AdminDashboardPage() {
         throw new Error("You must be logged in as admin.");
       }
       return listInReviewClaims(token);
+    },
+    enabled: isReady && isAuthenticated && Boolean(token),
+  });
+
+  const approvedClaimsQuery = useQuery({
+    queryKey: ["admin-approved-claims", token],
+    queryFn: () => {
+      if (!token) {
+        throw new Error("You must be logged in as admin.");
+      }
+      return listApprovedClaims(token);
+    },
+    enabled: isReady && isAuthenticated && Boolean(token),
+  });
+
+  const rejectedClaimsQuery = useQuery({
+    queryKey: ["admin-rejected-claims", token],
+    queryFn: () => {
+      if (!token) {
+        throw new Error("You must be logged in as admin.");
+      }
+      return listRejectedClaims(token);
     },
     enabled: isReady && isAuthenticated && Boolean(token),
   });
@@ -134,6 +162,57 @@ export default function AdminDashboardPage() {
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, "Unable to start review."));
+    },
+  });
+
+  const returnToReviewMutation = useMutation({
+    mutationFn: (claimId: number) => {
+      if (!token) {
+        throw new Error("You must be logged in as admin.");
+      }
+      return returnClaimToReview(claimId, token);
+    },
+    onSuccess: async () => {
+      toast.success("Claim returned to review.");
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-in-review-claims", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-approved-claims", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-rejected-claims", token],
+      });
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, "Unable to return claim to review."));
+    },
+  });
+
+  const deleteClaimMutation = useMutation({
+    mutationFn: (claimId: number) => {
+      if (!token) {
+        throw new Error("You must be logged in as admin.");
+      }
+      return deleteClaim(claimId, token);
+    },
+    onSuccess: async () => {
+      toast.success("Claim deleted successfully.");
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-submitted-claims", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-in-review-claims", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-approved-claims", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-rejected-claims", token],
+      });
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, "Unable to delete claim."));
     },
   });
 
@@ -239,12 +318,6 @@ export default function AdminDashboardPage() {
                           <p>Status: {formatStatus(claim.status)}</p>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <Link
-                            href={`/admin/claims/${claim.id}`}
-                            className="rounded-md border px-3 py-1.5 text-sm font-medium"
-                          >
-                            Open Review
-                          </Link>
                           <button
                             type="button"
                             disabled={
@@ -263,6 +336,28 @@ export default function AdminDashboardPage() {
                             reviewingClaimId === claim.id
                               ? "Starting..."
                               : "Start Review"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={
+                              deleteClaimMutation.isPending &&
+                              deletingClaimId === claim.id
+                            }
+                            onClick={() => {
+                              const confirmed = window.confirm(
+                                "Are you sure you want to delete this claim? This action cannot be undone."
+                              );
+                              if (!confirmed) return;
+                              setDeletingClaimId(claim.id);
+                              deleteClaimMutation.mutate(claim.id, {
+                                onSettled: () => setDeletingClaimId(null),
+                              });
+                            }}
+                            className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                          >
+                            {deleteClaimMutation.isPending && deletingClaimId === claim.id
+                              ? "Deleting..."
+                              : "Delete Claim"}
                           </button>
                         </div>
                       </div>
@@ -300,12 +395,204 @@ export default function AdminDashboardPage() {
                           <p>Amount: {formatAmount(claim)}</p>
                           <p>Status: {formatStatus(claim.status)}</p>
                         </div>
-                        <Link
-                          href={`/admin/claims/${claim.id}`}
-                          className="inline-flex rounded-md border px-3 py-1.5 text-sm font-medium"
-                        >
-                          Open Review
-                        </Link>
+                        <div className="flex flex-wrap gap-2">
+                          <Link
+                            href={`/admin/claims/${claim.id}`}
+                            className="inline-flex rounded-md border px-3 py-1.5 text-sm font-medium"
+                          >
+                            Open Review
+                          </Link>
+                          <button
+                            type="button"
+                            disabled={
+                              deleteClaimMutation.isPending &&
+                              deletingClaimId === claim.id
+                            }
+                            onClick={() => {
+                              const confirmed = window.confirm(
+                                "Are you sure you want to delete this claim? This action cannot be undone."
+                              );
+                              if (!confirmed) return;
+                              setDeletingClaimId(claim.id);
+                              deleteClaimMutation.mutate(claim.id, {
+                                onSettled: () => setDeletingClaimId(null),
+                              });
+                            }}
+                            className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                          >
+                            {deleteClaimMutation.isPending && deletingClaimId === claim.id
+                              ? "Deleting..."
+                              : "Delete Claim"}
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="space-y-3 rounded-lg border p-5">
+              <h2 className="text-xl font-semibold">Approved Claims</h2>
+
+              {approvedClaimsQuery.isPending ? (
+                <p className="text-sm text-gray-600">Loading approved claims...</p>
+              ) : approvedClaimsQuery.isError ? (
+                <p className="text-sm text-red-600">
+                  {getErrorMessage(
+                    approvedClaimsQuery.error,
+                    "Unable to load approved claims."
+                  )}
+                </p>
+              ) : approvedClaimsQuery.data.length === 0 ? (
+                <p className="text-sm text-gray-600">
+                  No claims have been approved yet.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {approvedClaimsQuery.data.map((claim) => (
+                    <li key={claim.id} className="rounded-md border p-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-1 text-sm">
+                          <p>Claim ID: {claim.id}</p>
+                          <p>Debtor: {textValue(claim.debtorName, "Unnamed Debtor")}</p>
+                          <p>Client: {textValue(claim.clientName)}</p>
+                          <p>Amount: {formatAmount(claim)}</p>
+                          <p>Status: {formatStatus(claim.status)}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Link
+                            href={`/admin/claims/${claim.id}`}
+                            className="inline-flex rounded-md border px-3 py-1.5 text-sm font-medium"
+                          >
+                            View Claim
+                          </Link>
+                          <button
+                            type="button"
+                            disabled={
+                              returnToReviewMutation.isPending &&
+                              returningClaimId === claim.id
+                            }
+                            onClick={() => {
+                              setReturningClaimId(claim.id);
+                              returnToReviewMutation.mutate(claim.id, {
+                                onSettled: () => setReturningClaimId(null),
+                              });
+                            }}
+                            className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                          >
+                            {returnToReviewMutation.isPending &&
+                            returningClaimId === claim.id
+                              ? "Returning..."
+                              : "Return to Review"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={
+                              deleteClaimMutation.isPending &&
+                              deletingClaimId === claim.id
+                            }
+                            onClick={() => {
+                              const confirmed = window.confirm(
+                                "Are you sure you want to delete this claim? This action cannot be undone."
+                              );
+                              if (!confirmed) return;
+                              setDeletingClaimId(claim.id);
+                              deleteClaimMutation.mutate(claim.id, {
+                                onSettled: () => setDeletingClaimId(null),
+                              });
+                            }}
+                            className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                          >
+                            {deleteClaimMutation.isPending && deletingClaimId === claim.id
+                              ? "Deleting..."
+                              : "Delete Claim"}
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="space-y-3 rounded-lg border p-5">
+              <h2 className="text-xl font-semibold">Rejected Claims</h2>
+
+              {rejectedClaimsQuery.isPending ? (
+                <p className="text-sm text-gray-600">Loading rejected claims...</p>
+              ) : rejectedClaimsQuery.isError ? (
+                <p className="text-sm text-red-600">
+                  {getErrorMessage(
+                    rejectedClaimsQuery.error,
+                    "Unable to load rejected claims."
+                  )}
+                </p>
+              ) : rejectedClaimsQuery.data.length === 0 ? (
+                <p className="text-sm text-gray-600">
+                  No claims have been rejected.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {rejectedClaimsQuery.data.map((claim) => (
+                    <li key={claim.id} className="rounded-md border p-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-1 text-sm">
+                          <p>Claim ID: {claim.id}</p>
+                          <p>Debtor: {textValue(claim.debtorName, "Unnamed Debtor")}</p>
+                          <p>Client: {textValue(claim.clientName)}</p>
+                          <p>Amount: {formatAmount(claim)}</p>
+                          <p>Status: {formatStatus(claim.status)}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Link
+                            href={`/admin/claims/${claim.id}`}
+                            className="inline-flex rounded-md border px-3 py-1.5 text-sm font-medium"
+                          >
+                            View Claim
+                          </Link>
+                          <button
+                            type="button"
+                            disabled={
+                              returnToReviewMutation.isPending &&
+                              returningClaimId === claim.id
+                            }
+                            onClick={() => {
+                              setReturningClaimId(claim.id);
+                              returnToReviewMutation.mutate(claim.id, {
+                                onSettled: () => setReturningClaimId(null),
+                              });
+                            }}
+                            className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                          >
+                            {returnToReviewMutation.isPending &&
+                            returningClaimId === claim.id
+                              ? "Returning..."
+                              : "Return to Review"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={
+                              deleteClaimMutation.isPending &&
+                              deletingClaimId === claim.id
+                            }
+                            onClick={() => {
+                              const confirmed = window.confirm(
+                                "Are you sure you want to delete this claim? This action cannot be undone."
+                              );
+                              if (!confirmed) return;
+                              setDeletingClaimId(claim.id);
+                              deleteClaimMutation.mutate(claim.id, {
+                                onSettled: () => setDeletingClaimId(null),
+                              });
+                            }}
+                            className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                          >
+                            {deleteClaimMutation.isPending && deletingClaimId === claim.id
+                              ? "Deleting..."
+                              : "Delete Claim"}
+                          </button>
+                        </div>
                       </div>
                     </li>
                   ))}

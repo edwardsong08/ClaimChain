@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -72,6 +73,7 @@ class AdminClaimReviewIntegrationTest {
     private Long submittedClaimAId;
     private Long submittedClaimBId;
     private Long approvedClaimId;
+    private Long rejectedClaimId;
     private Long packagedClaimId;
 
     @BeforeEach
@@ -84,6 +86,7 @@ class AdminClaimReviewIntegrationTest {
         submittedClaimAId = createClaim(providerUser, ClaimStatus.SUBMITTED, "Submitted Client A").getId();
         submittedClaimBId = createClaim(providerUser, ClaimStatus.SUBMITTED, "Submitted Client B").getId();
         approvedClaimId = createClaim(providerUser, ClaimStatus.APPROVED, "Approved Client Existing").getId();
+        rejectedClaimId = createClaim(providerUser, ClaimStatus.REJECTED, "Rejected Client Existing").getId();
         packagedClaimId = createClaim(providerUser, ClaimStatus.PACKAGED, "Packaged Client Existing").getId();
 
         adminToken = loginAndGetAccessToken(ADMIN_EMAIL);
@@ -121,6 +124,15 @@ class AdminClaimReviewIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andReturn();
         assertApiError(startReviewForbidden, "FORBIDDEN");
+
+        MvcResult returnToReviewForbidden = mockMvc.perform(
+                        post("/api/admin/claims/{claimId}/return-to-review", approvedClaimId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + providerToken)
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+        assertApiError(returnToReviewForbidden, "FORBIDDEN");
 
         MvcResult overrideFreezeForbidden = mockMvc.perform(
                         post("/api/admin/claims/{claimId}/override-freeze", submittedClaimAId)
@@ -256,6 +268,88 @@ class AdminClaimReviewIntegrationTest {
                 submittedClaimBId
         );
         assertThat(metadataJson).contains("\"decision\":\"REJECT\"", "\"newStatus\":\"REJECTED\"", "\"missingDocsCount\":2");
+    }
+
+    @Test
+    void adminCanReturnApprovedClaimToReview() throws Exception {
+        mockMvc.perform(
+                        post("/api/admin/claims/{claimId}/return-to-review", approvedClaimId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(approvedClaimId))
+                .andExpect(jsonPath("$.status").value("UNDER_REVIEW"));
+
+        Claim updated = claimRepository.findById(approvedClaimId).orElseThrow();
+        assertThat(updated.getStatus()).isEqualTo(ClaimStatus.UNDER_REVIEW);
+    }
+
+    @Test
+    void adminCanReturnRejectedClaimToReview() throws Exception {
+        mockMvc.perform(
+                        post("/api/admin/claims/{claimId}/return-to-review", rejectedClaimId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(rejectedClaimId))
+                .andExpect(jsonPath("$.status").value("UNDER_REVIEW"));
+
+        Claim updated = claimRepository.findById(rejectedClaimId).orElseThrow();
+        assertThat(updated.getStatus()).isEqualTo(ClaimStatus.UNDER_REVIEW);
+    }
+
+    @Test
+    void returnToReviewRejectsSubmittedClaim() throws Exception {
+        MvcResult result = mockMvc.perform(
+                        post("/api/admin/claims/{claimId}/return-to-review", submittedClaimAId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+
+        assertApiError(result, "VALIDATION_ERROR");
+    }
+
+    @Test
+    void returnToReviewRejectsUnderReviewClaim() throws Exception {
+        startReview(submittedClaimAId);
+
+        MvcResult result = mockMvc.perform(
+                        post("/api/admin/claims/{claimId}/return-to-review", submittedClaimAId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+
+        assertApiError(result, "VALIDATION_ERROR");
+    }
+
+    @Test
+    void adminCanDeleteClaim() throws Exception {
+        mockMvc.perform(
+                        delete("/api/admin/claims/{claimId}", submittedClaimAId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isNoContent());
+
+        assertThat(claimRepository.findById(submittedClaimAId)).isEmpty();
+    }
+
+    @Test
+    void deletingNonexistentClaimReturnsNotFound() throws Exception {
+        MvcResult result = mockMvc.perform(
+                        delete("/api/admin/claims/{claimId}", Long.MAX_VALUE)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+
+        assertApiError(result, "NOT_FOUND");
     }
 
     @Test

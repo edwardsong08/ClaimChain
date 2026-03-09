@@ -208,6 +208,38 @@ public class ClaimService {
         return mapToDTO(saved);
     }
 
+    public ClaimResponseDTO returnToReview(Long claimId, String adminEmail) {
+        User admin = requireAdminUser(adminEmail);
+        Claim claim = claimRepository.findById(claimId)
+                .orElseThrow(() -> new IllegalArgumentException("Claim not found."));
+
+        ClaimStatus priorStatus = claim.getStatus();
+        if (priorStatus != ClaimStatus.APPROVED && priorStatus != ClaimStatus.REJECTED) {
+            throw new IllegalArgumentException("Only APPROVED or REJECTED claims can be returned to UNDER_REVIEW.");
+        }
+
+        ClaimStatus newStatus = ClaimStatus.UNDER_REVIEW;
+        claim.setStatus(newStatus);
+        claim.setReviewStartedByUser(admin);
+        claim.setReviewStartedAt(Instant.now());
+        Claim saved = claimRepository.save(claim);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("priorStatus", priorStatus.name());
+        metadata.put("newStatus", newStatus.name());
+
+        auditService.record(
+                admin.getId(),
+                admin.getRole() == null ? null : admin.getRole().name(),
+                "CLAIM_RETURNED_TO_REVIEW",
+                "CLAIM",
+                saved.getId(),
+                toJson(metadata)
+        );
+
+        return mapToDTO(saved);
+    }
+
     public ClaimResponseDTO reviewClaim(Long claimId, AdminClaimDecisionRequestDTO request, String adminEmail) {
         if (request == null) {
             throw new IllegalArgumentException("Decision request is required.");
@@ -285,6 +317,29 @@ public class ClaimService {
                 admin.getId(),
                 admin.getRole() == null ? null : admin.getRole().name(),
                 "CLAIM_RESCORED",
+                "CLAIM",
+                claimId,
+                toJson(metadata)
+        );
+    }
+
+    public void deleteClaimAsAdmin(Long claimId, String adminEmail) {
+        User admin = requireAdminUser(adminEmail);
+        Claim claim = claimRepository.findById(claimId)
+                .orElseThrow(ClaimNotFoundException::new);
+
+        ClaimStatus priorStatus = claim.getStatus();
+
+        claimRepository.delete(claim);
+        claimRepository.flush();
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("priorStatus", priorStatus == null ? null : priorStatus.name());
+
+        auditService.record(
+                admin.getId(),
+                admin.getRole() == null ? null : admin.getRole().name(),
+                "CLAIM_DELETED",
                 "CLAIM",
                 claimId,
                 toJson(metadata)
@@ -698,6 +753,9 @@ public class ClaimService {
     }
 
     public static class ClaimNotFoundException extends RuntimeException {
+        public ClaimNotFoundException() {
+            super("Claim not found.");
+        }
     }
 
     public static class DocumentNotFoundException extends RuntimeException {

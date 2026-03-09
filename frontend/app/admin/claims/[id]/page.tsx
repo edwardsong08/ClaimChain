@@ -6,7 +6,13 @@ import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuthSession } from "@/hooks/use-auth-session";
-import { decideClaim, getAdminClaimById, rescoreClaim } from "@/services/admin";
+import {
+  deleteClaim,
+  decideClaim,
+  getAdminClaimById,
+  rescoreClaim,
+  returnClaimToReview,
+} from "@/services/admin";
 import { listClaimDocuments } from "@/services/documents";
 import type { AdminClaimDecision } from "@/types/admin";
 import type { Claim } from "@/types/claims";
@@ -233,10 +239,11 @@ export default function AdminClaimDetailPage() {
       }
 
       const parsedMissingDocs = parseMissingDocs(missingDocsInput);
+      const normalizedNotes = notes.trim();
       return decideClaim(token, numericClaimId, {
         decision,
-        notes: notes.trim().length > 0 ? notes.trim() : undefined,
-        missingDocs: parsedMissingDocs.length > 0 ? parsedMissingDocs : undefined,
+        notes: normalizedNotes,
+        missingDocs: parsedMissingDocs,
       });
     },
     onSuccess: async (_, decision) => {
@@ -250,6 +257,12 @@ export default function AdminClaimDetailPage() {
       });
       await queryClient.invalidateQueries({
         queryKey: ["admin-in-review-claims", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-approved-claims", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-rejected-claims", token],
       });
       await queryClient.invalidateQueries({
         queryKey: ["admin-claim-detail", claimId, token],
@@ -285,8 +298,80 @@ export default function AdminClaimDetailPage() {
     },
   });
 
+  const returnToReviewMutation = useMutation({
+    mutationFn: async () => {
+      if (!token) {
+        throw new Error("You must be logged in as admin.");
+      }
+      if (!Number.isFinite(numericClaimId)) {
+        throw new Error("Invalid claim id.");
+      }
+      return returnClaimToReview(numericClaimId, token);
+    },
+    onSuccess: async () => {
+      toast.success("Claim returned to review.");
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-claim-detail", claimId, token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-in-review-claims", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-approved-claims", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-rejected-claims", token],
+      });
+      router.push("/admin/dashboard");
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, "Unable to return claim to review."));
+    },
+  });
+
+  const deleteClaimMutation = useMutation({
+    mutationFn: async () => {
+      if (!token) {
+        throw new Error("You must be logged in as admin.");
+      }
+      if (!Number.isFinite(numericClaimId)) {
+        throw new Error("Invalid claim id.");
+      }
+      return deleteClaim(numericClaimId, token);
+    },
+    onSuccess: async () => {
+      toast.success("Claim deleted successfully.");
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-claim-detail", claimId, token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-submitted-claims", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-in-review-claims", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-approved-claims", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-rejected-claims", token],
+      });
+      router.push("/admin/dashboard");
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, "Unable to delete claim."));
+    },
+  });
+
   const claim = claimQuery.data;
   const canSubmitDecision = claim?.status === "UNDER_REVIEW";
+  const canReturnToReview =
+    claim?.status === "APPROVED" || claim?.status === "REJECTED";
+  const isActionPending =
+    decisionMutation.isPending ||
+    rescoreMutation.isPending ||
+    returnToReviewMutation.isPending ||
+    deleteClaimMutation.isPending;
 
   return (
     <main className="min-h-screen px-6 py-10">
@@ -397,33 +482,35 @@ export default function AdminClaimDetailPage() {
               )}
             </div>
 
-            <div className="rounded-lg border p-4">
-              <h2 className="text-lg font-semibold">Score / Explainability</h2>
-              {hasScoreData(claim) ? (
-                <>
-                  <div className="mt-2 grid gap-2 text-sm">
-                    <p>Score: {typeof claim.scoreTotal === "number" ? claim.scoreTotal : "N/A"}</p>
-                    <p>Grade: {textValue(claim.grade)}</p>
-                    <p>Extraction Success: {formatPercent(claim.extractionSuccessRate)}</p>
-                  </div>
-
-                  {getScoreBreakdownItems(claim).length > 0 && (
-                    <div className="mt-4">
-                      <h3 className="text-sm font-semibold">Score Breakdown</h3>
-                      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-                        {getScoreBreakdownItems(claim).map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
+            {claim.status === "APPROVED" && (
+              <div className="rounded-lg border p-4">
+                <h2 className="text-lg font-semibold">Score / Explainability</h2>
+                {hasScoreData(claim) ? (
+                  <>
+                    <div className="mt-2 grid gap-2 text-sm">
+                      <p>Score: {typeof claim.scoreTotal === "number" ? claim.scoreTotal : "N/A"}</p>
+                      <p>Grade: {textValue(claim.grade)}</p>
+                      <p>Extraction Success: {formatPercent(claim.extractionSuccessRate)}</p>
                     </div>
-                  )}
-                </>
-              ) : (
-                <p className="mt-2 text-sm text-gray-600">
-                  Scoring pending. Scores are generated after claim review.
-                </p>
-              )}
-            </div>
+
+                    {getScoreBreakdownItems(claim).length > 0 && (
+                      <div className="mt-4">
+                        <h3 className="text-sm font-semibold">Score Breakdown</h3>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                          {getScoreBreakdownItems(claim).map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-600">
+                    Scoring pending. Scores are generated after claim review.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="rounded-lg border p-4">
               <h2 className="text-lg font-semibold">Review Actions</h2>
@@ -467,8 +554,9 @@ export default function AdminClaimDetailPage() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    disabled={decisionMutation.isPending || !canSubmitDecision}
+                    disabled={isActionPending || !canSubmitDecision}
                     onClick={() => {
+                      if (isActionPending || !canSubmitDecision) return;
                       setDecisionInFlight("APPROVE");
                       decisionMutation.mutate("APPROVE", {
                         onSettled: () => setDecisionInFlight(null),
@@ -483,8 +571,9 @@ export default function AdminClaimDetailPage() {
 
                   <button
                     type="button"
-                    disabled={decisionMutation.isPending || !canSubmitDecision}
+                    disabled={isActionPending || !canSubmitDecision}
                     onClick={() => {
+                      if (isActionPending || !canSubmitDecision) return;
                       setDecisionInFlight("REJECT");
                       decisionMutation.mutate("REJECT", {
                         onSettled: () => setDecisionInFlight(null),
@@ -499,13 +588,46 @@ export default function AdminClaimDetailPage() {
 
                   <button
                     type="button"
-                    disabled={rescoreMutation.isPending}
+                    disabled={isActionPending}
                     onClick={() => {
+                      if (isActionPending) return;
                       rescoreMutation.mutate();
                     }}
                     className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
                   >
                     {rescoreMutation.isPending ? "Rescoring..." : "Rescore"}
+                  </button>
+
+                  {canReturnToReview && (
+                    <button
+                      type="button"
+                      disabled={isActionPending}
+                      onClick={() => {
+                        if (isActionPending) return;
+                        returnToReviewMutation.mutate();
+                      }}
+                      className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                    >
+                      {returnToReviewMutation.isPending
+                        ? "Returning..."
+                        : "Return to Review"}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={isActionPending}
+                    onClick={() => {
+                      if (isActionPending) return;
+                      const confirmed = window.confirm(
+                        "Are you sure you want to delete this claim? This action cannot be undone."
+                      );
+                      if (!confirmed) return;
+                      deleteClaimMutation.mutate();
+                    }}
+                    className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                  >
+                    {deleteClaimMutation.isPending ? "Deleting..." : "Delete Claim"}
                   </button>
                 </div>
               </div>

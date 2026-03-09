@@ -16,6 +16,13 @@ function getAuthHeaders(token: string) {
   };
 }
 
+function getJsonAuthHeaders(token: string) {
+  return {
+    "Content-Type": "application/json",
+    ...getAuthHeaders(token),
+  };
+}
+
 export function listUnverifiedUsers(token: string) {
   return apiFetch("/api/admin/unverified-users", {
     method: "GET",
@@ -38,6 +45,14 @@ export function listInReviewClaims(token: string) {
   return listClaimsByStatus(token, "UNDER_REVIEW");
 }
 
+export function listApprovedClaims(token: string) {
+  return listClaimsByStatus(token, "APPROVED");
+}
+
+export function listRejectedClaims(token: string) {
+  return listClaimsByStatus(token, "REJECTED");
+}
+
 export function getAdminClaimById(token: string, claimId: string) {
   return apiFetch(`/api/claims/${claimId}`, {
     method: "GET",
@@ -52,6 +67,13 @@ export function startReviewClaim(token: string, claimId: number) {
   }) as Promise<AdminClaim>;
 }
 
+export function returnClaimToReview(claimId: number | string, token: string) {
+  return apiFetch(`/api/admin/claims/${claimId}/return-to-review`, {
+    method: "POST",
+    headers: getAuthHeaders(token),
+  }) as Promise<AdminClaim>;
+}
+
 export function decideClaim(
   token: string,
   claimId: number,
@@ -59,7 +81,7 @@ export function decideClaim(
 ) {
   return apiFetch(`/api/admin/claims/${claimId}/decision`, {
     method: "POST",
-    headers: getAuthHeaders(token),
+    headers: getJsonAuthHeaders(token),
     body: JSON.stringify(payload),
   }) as Promise<AdminClaim>;
 }
@@ -74,6 +96,21 @@ export async function rescoreClaim(token: string, claimId: number) {
     const responseText = await response.text();
     throw new Error(responseText || "Unable to rescore claim.");
   }
+}
+
+export async function deleteClaim(claimId: number | string, token: string) {
+  const response = await fetch(`${API_BASE}/api/admin/claims/${claimId}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(token),
+  });
+
+  const responseText = await response.text();
+
+  if (!response.ok) {
+    throw new Error(responseText || "Unable to delete claim.");
+  }
+
+  return responseText;
 }
 
 export async function verifyUser(token: string, userId: number) {
