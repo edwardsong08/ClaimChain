@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "eligibility": {
+    "minScore": 35,
+    "minGrade": "D",
+    "minBalance": 500,
+    "requireJurisdictionKnown": true,
+    "requireInvoiceDocument": true,
+    "requiredDocTypes": [],
+    "minExtractionSuccessRate": 0.6,
+    "excludeDisputeStatuses": ["ACTIVE"]
+  },
+  "packageSizing": {
+    "minClaims": 1,
+    "maxClaims": 4,
+    "minTotalFaceValue": 1000,
+    "maxTotalFaceValue": 3000
+  },
+  "diversification": {
+    "maxPctPerJurisdiction": 0.67,
+    "maxPctPerDebtorType": 0.67
+  },
+  "selectionStrategy": {
+    "mode": "BEST_FIRST"
+  }
+}
