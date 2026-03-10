@@ -24,6 +24,8 @@ import com.claimchain.backend.repository.RulesetRepository;
 import com.claimchain.backend.repository.UserRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +43,7 @@ import java.util.Set;
 
 @Service
 public class PackageService {
+    private static final Logger log = LoggerFactory.getLogger(PackageService.class);
 
     private static final double EPSILON = 1e-9d;
     private static final String DEFAULT_BUCKET = "UNKNOWN";
@@ -199,6 +202,13 @@ public class PackageService {
     public BuildPackageResult buildOnePackage(Long adminUserId, String notesOptional, boolean dryRun) {
         User admin = requireAdminById(adminUserId);
         Ruleset activePackagingRuleset = requireActivePackagingRuleset();
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "Building package with active packagingRulesetId={} version={}",
+                    activePackagingRuleset.getId(),
+                    activePackagingRuleset.getVersion()
+            );
+        }
         PackagingRulesetConfig config = parsePackagingRuleset(activePackagingRuleset.getConfigJson());
         PackagingRuleContext context = normalizeAndValidateContext(config);
 
@@ -383,7 +393,7 @@ public class PackageService {
     }
 
     private Ruleset requireActivePackagingRuleset() {
-        return rulesetRepository.findFirstByTypeAndStatus(RulesetType.PACKAGING, RulesetStatus.ACTIVE)
+        return rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.PACKAGING, RulesetStatus.ACTIVE)
                 .orElseThrow(() -> new PackageConflictException(
                         "PACKAGE_BUILD_FAILED",
                         "Unable to build package.",
@@ -524,6 +534,18 @@ public class PackageService {
         context.maxPctPerJurisdiction = maxPctPerJurisdiction;
         context.maxPctPerDebtorType = maxPctPerDebtorType;
         context.selectionMode = mode;
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "Packaging ruleset context minScore={} minGrade={} minBalance={} requireInvoice={} minExtractionSuccessRate={} excludedDisputes={} requiredDocTypes={}",
+                    context.minScore,
+                    context.minGrade,
+                    context.minBalance,
+                    context.requireInvoiceDocument,
+                    context.minExtractionSuccessRate,
+                    context.excludedDisputeStatuses,
+                    context.requiredDocTypes
+            );
+        }
         return context;
     }
 
@@ -532,9 +554,17 @@ public class PackageService {
         List<Claim> approvedClaims = claimRepository.findByStatusOrderBySubmittedAtDesc(ClaimStatus.APPROVED);
 
         for (Claim claim : approvedClaims) {
-            ClaimScore currentScore = claimScoreRepository.findFirstByClaimIdOrderByScoredAtDesc(claim.getId()).orElse(null);
+            ClaimScore currentScore = claimScoreRepository.findFirstByClaimIdOrderByScoredAtDescIdDesc(claim.getId()).orElse(null);
             if (currentScore == null || currentScore.getScoreTotal() == null) {
                 continue;
+            }
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "Packaging candidate claimId={} scoreTotal={} grade={}",
+                        claim.getId(),
+                        currentScore.getScoreTotal(),
+                        currentScore.getGrade()
+                );
             }
 
             List<ClaimDocument> documents = claimDocumentRepository.findByClaimId(claim.getId());

@@ -194,10 +194,20 @@ class ScoringEngineIntegrationTest {
 
         assertThat(latest.getRulesetVersion()).isEqualTo(2);
         assertThat(latest.getScoreTotal()).isNotEqualTo(previous.getScoreTotal());
+        assertThat(latest.getGrade()).isNotBlank();
         JsonNode latestExplainability = objectMapper.readTree(latest.getExplainabilityJson());
         assertThat(latestExplainability.path("trigger").asText()).isEqualTo("ADMIN_RESCORE");
         assertThat(latestExplainability.path("contributions").toString())
                 .contains("Invoice document extracted successfully");
+
+        mockMvc.perform(
+                        get("/api/claims/{id}", claimId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.scoreTotal").value(latest.getScoreTotal()))
+                .andExpect(jsonPath("$.grade").value(latest.getGrade()));
 
         Integer rescoreAuditCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM audit_events WHERE action = 'CLAIM_RESCORED' AND entity_type = 'CLAIM' AND entity_id = ?",

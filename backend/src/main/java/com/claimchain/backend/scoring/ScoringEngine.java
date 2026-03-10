@@ -17,6 +17,8 @@ import com.claimchain.backend.repository.RulesetRepository;
 import com.claimchain.backend.service.ClaimScoringPersistenceService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,9 +36,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.Comparator;
 
 @Service
 public class ScoringEngine {
+    private static final Logger log = LoggerFactory.getLogger(ScoringEngine.class);
 
     private static final String GROUP_ENFORCEABILITY = "enforceability";
     private static final String GROUP_DOCUMENTATION = "documentation";
@@ -94,11 +98,21 @@ public class ScoringEngine {
         Claim claim = claimRepository.findById(claimId)
                 .orElseThrow(() -> new IllegalArgumentException("Claim not found."));
 
-        Ruleset activeRuleset = rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE)
+        Ruleset activeRuleset = rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE)
                 .orElseThrow(() -> new IllegalArgumentException("No ACTIVE SCORING ruleset found."));
 
         ScoringTrigger effectiveTrigger = trigger == null ? ScoringTrigger.APPROVAL : trigger;
         ScoringRulesetConfig config = parseConfig(activeRuleset.getConfigJson());
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "Scoring claimId={} using scoringRulesetId={} version={} trigger={} gradeBands={}",
+                    claimId,
+                    activeRuleset.getId(),
+                    activeRuleset.getVersion(),
+                    effectiveTrigger.name(),
+                    summarizeGradeBands(config.getGradeBands())
+            );
+        }
         List<ClaimDocument> documents = claimDocumentRepository.findByClaimId(claim.getId());
         ScoreComputation computation = evaluate(claim, documents, config, isRescore, effectiveTrigger);
 
@@ -121,7 +135,7 @@ public class ScoringEngine {
     }
 
     public boolean autoScoreOnApprovalIfReady(Long claimId, Long scoredByUserIdNullable) {
-        Optional<Ruleset> activeRulesetOpt = rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE);
+        Optional<Ruleset> activeRulesetOpt = rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE);
         if (activeRulesetOpt.isEmpty()) {
             return false;
         }
@@ -137,7 +151,7 @@ public class ScoringEngine {
     }
 
     public boolean autoScoreOnDocumentsReadyIfApproved(Long claimId) {
-        Optional<Ruleset> activeRulesetOpt = rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE);
+        Optional<Ruleset> activeRulesetOpt = rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE);
         if (activeRulesetOpt.isEmpty()) {
             return false;
         }
@@ -260,6 +274,9 @@ public class ScoringEngine {
         int total = Math.round(enforceability + documentation + collectability + operationalRisk);
         total = clamp(total, 0, 100);
         String grade = resolveGrade(total, config.getGradeBands());
+        if (log.isDebugEnabled()) {
+            log.debug("Computed score for claimId={} total={} grade={}", claim.getId(), total, grade);
+        }
 
         String explainabilityJson = buildExplainabilityJson(trigger, eligibilityFailures, contributions);
         String featureSnapshotJson = buildFeatureSnapshotJson(
@@ -658,7 +675,15 @@ public class ScoringEngine {
             return "F";
         }
 
-        for (ScoringRulesetConfig.GradeBandConfig band : gradeBands) {
+        List<ScoringRulesetConfig.GradeBandConfig> orderedBands = gradeBands.stream()
+                .filter(band -> band != null && band.getGrade() != null && band.getMinScore() != null)
+                .sorted(Comparator.comparing(
+                        ScoringRulesetConfig.GradeBandConfig::getMinScore,
+                        Comparator.reverseOrder()
+                ))
+                .toList();
+
+        for (ScoringRulesetConfig.GradeBandConfig band : orderedBands) {
             if (band == null || band.getGrade() == null || band.getMinScore() == null) {
                 continue;
             }
@@ -668,6 +693,21 @@ public class ScoringEngine {
         }
 
         return "F";
+    }
+
+    private String summarizeGradeBands(List<ScoringRulesetConfig.GradeBandConfig> gradeBands) {
+        if (gradeBands == null || gradeBands.isEmpty()) {
+            return "[]";
+        }
+        return gradeBands.stream()
+                .filter(band -> band != null)
+                .map(band -> {
+                    String grade = band.getGrade() == null ? "?" : band.getGrade();
+                    String minScore = band.getMinScore() == null ? "?" : String.valueOf(band.getMinScore());
+                    return grade + ":" + minScore;
+                })
+                .toList()
+                .toString();
     }
 
     private String buildExplainabilityJson(

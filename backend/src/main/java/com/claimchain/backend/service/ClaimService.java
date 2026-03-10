@@ -510,7 +510,7 @@ public class ClaimService {
             return;
         }
 
-        claimScoreRepository.findFirstByClaimIdOrderByScoredAtDesc(claim.getId()).ifPresent(score -> {
+        claimScoreRepository.findFirstByClaimIdOrderByScoredAtDescIdDesc(claim.getId()).ifPresent(score -> {
             dto.setEligible(score.isEligible());
             dto.setScoreTotal(score.getScoreTotal());
             dto.setGrade(score.getGrade());

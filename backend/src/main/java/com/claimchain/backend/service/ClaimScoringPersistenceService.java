@@ -129,7 +129,7 @@ public class ClaimScoringPersistenceService {
     @Transactional(readOnly = true)
     public List<ClaimScoreResponseDTO> listScoreRunsForClaim(Long claimId, String adminEmail) {
         requireAdmin(adminEmail);
-        return claimScoreRepository.findByClaimIdOrderByScoredAtDesc(claimId)
+        return claimScoreRepository.findByClaimIdOrderByScoredAtDescIdDesc(claimId)
                 .stream()
                 .map(this::toResponse)
                 .toList();

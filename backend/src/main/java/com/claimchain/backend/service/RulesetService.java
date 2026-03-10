@@ -49,7 +49,7 @@ public class RulesetService {
 
     @Transactional(readOnly = true)
     public Optional<Ruleset> getActive(RulesetType type) {
-        return rulesetRepository.findFirstByTypeAndStatus(type, RulesetStatus.ACTIVE);
+        return rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(type, RulesetStatus.ACTIVE);
     }
 
     @Transactional(readOnly = true)
@@ -98,7 +98,7 @@ public class RulesetService {
 
         validateForActivation(target);
 
-        Ruleset currentActive = rulesetRepository.findFirstByTypeAndStatus(target.getType(), RulesetStatus.ACTIVE)
+        Ruleset currentActive = rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(target.getType(), RulesetStatus.ACTIVE)
                 .orElse(null);
         Long priorActiveId = currentActive == null ? null : currentActive.getId();
 

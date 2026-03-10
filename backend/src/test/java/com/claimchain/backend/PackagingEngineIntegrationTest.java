@@ -276,7 +276,7 @@ class PackagingEngineIntegrationTest {
         createDocument(extractionBelowThreshold, DocumentType.INVOICE, ExtractionStatus.FAILED);
         createDocument(disputed, DocumentType.INVOICE, ExtractionStatus.SUCCEEDED);
 
-        recordScore(invoiceOnlyEligible, 38, "D");
+        recordScore(invoiceOnlyEligible, 39, "D");
         recordScore(contractOnlyEligible, 90, "A");
         recordScore(belowScore, 34, "F");
         recordScore(extractionBelowThreshold, 88, "B");

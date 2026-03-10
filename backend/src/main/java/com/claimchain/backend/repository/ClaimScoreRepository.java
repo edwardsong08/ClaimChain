@@ -9,4 +9,6 @@ import java.util.Optional;
 public interface ClaimScoreRepository extends JpaRepository<ClaimScore, Long> {
     List<ClaimScore> findByClaimIdOrderByScoredAtDesc(Long claimId);
     Optional<ClaimScore> findFirstByClaimIdOrderByScoredAtDesc(Long claimId);
+    List<ClaimScore> findByClaimIdOrderByScoredAtDescIdDesc(Long claimId);
+    Optional<ClaimScore> findFirstByClaimIdOrderByScoredAtDescIdDesc(Long claimId);
 }

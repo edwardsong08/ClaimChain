@@ -75,7 +75,7 @@ public class AnonymizedViewService {
             long claimId = claim.getId();
 
             List<ClaimDocument> documents = claimDocumentRepository.findByClaimId(claimId);
-            ClaimScore score = claimScoreRepository.findFirstByClaimIdOrderByScoredAtDesc(claimId).orElse(null);
+            ClaimScore score = claimScoreRepository.findFirstByClaimIdOrderByScoredAtDescIdDesc(claimId).orElse(null);
 
             AnonymizedClaimView view = anonymizedClaimViewRepository
                     .findByPackageEntityIdAndClaimId(packageEntity.getId(), claimId)

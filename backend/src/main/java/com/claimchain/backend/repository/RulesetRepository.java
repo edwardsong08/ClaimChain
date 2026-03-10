@@ -12,6 +12,7 @@ import java.util.Optional;
 
 public interface RulesetRepository extends JpaRepository<Ruleset, Long> {
     Optional<Ruleset> findFirstByTypeAndStatus(RulesetType type, RulesetStatus status);
+    Optional<Ruleset> findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType type, RulesetStatus status);
     List<Ruleset> findByTypeOrderByVersionDesc(RulesetType type);
 
     @Query("select coalesce(max(r.version), 0) from Ruleset r where r.type = :type")

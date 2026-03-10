@@ -88,7 +88,7 @@ class ScoringEngineUnitTest {
 
         when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
         when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(documents);
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimScoringPersistenceService.recordScoreRun(
                 eq(claimId),
@@ -153,7 +153,7 @@ class ScoringEngineUnitTest {
 
         when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
         when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(documents);
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimScoringPersistenceService.recordScoreRun(
                 eq(claimId),
@@ -206,7 +206,7 @@ class ScoringEngineUnitTest {
 
         when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
         when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(documents);
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimScoringPersistenceService.recordScoreRun(
                 eq(claimId),
@@ -251,6 +251,21 @@ class ScoringEngineUnitTest {
     }
 
     @Test
+    void scoreClaim_score39_mapsToGradeD() {
+        assertFixedScoreMapsToGrade(319L, 39, "D");
+    }
+
+    @Test
+    void scoreClaim_score44_mapsToGradeD() {
+        assertFixedScoreMapsToGrade(320L, 44, "D");
+    }
+
+    @Test
+    void scoreClaim_score50_mapsToGradeC() {
+        assertFixedScoreMapsToGrade(321L, 50, "C");
+    }
+
+    @Test
     void scoreClaim_allowsInvoiceOnlyClaimWhenEligibilityDocsAreConfigured() {
         Long claimId = 207L;
         Claim claim = buildApprovedClaim(claimId, DisputeStatus.NONE, new BigDecimal("2500.00"));
@@ -259,7 +274,7 @@ class ScoringEngineUnitTest {
 
         when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
         when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(documents);
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimScoringPersistenceService.recordScoreRun(
                 eq(claimId),
@@ -312,7 +327,7 @@ class ScoringEngineUnitTest {
 
         when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
         when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(documents);
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimScoringPersistenceService.recordScoreRun(
                 eq(claimId),
@@ -368,7 +383,7 @@ class ScoringEngineUnitTest {
 
         when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
         when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(documents);
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimScoringPersistenceService.recordScoreRun(
                 eq(claimId),
@@ -434,7 +449,7 @@ class ScoringEngineUnitTest {
         when(claimRepository.findById(nonInvoiceClaimId)).thenReturn(Optional.of(nonInvoiceClaim));
         when(claimDocumentRepository.findByClaimId(invoiceClaimId)).thenReturn(invoiceEvidenceDocs);
         when(claimDocumentRepository.findByClaimId(nonInvoiceClaimId)).thenReturn(nonInvoiceDocs);
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimScoringPersistenceService.recordScoreRun(
                 any(),
@@ -519,7 +534,7 @@ class ScoringEngineUnitTest {
         when(claimRepository.findById(adminRescoreClaimId)).thenReturn(Optional.of(adminRescoreClaim));
         when(claimDocumentRepository.findByClaimId(docReadyClaimId)).thenReturn(extractedEvidenceDocs);
         when(claimDocumentRepository.findByClaimId(adminRescoreClaimId)).thenReturn(extractedEvidenceDocs);
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimScoringPersistenceService.recordScoreRun(
                 any(),
@@ -600,7 +615,7 @@ class ScoringEngineUnitTest {
 
         when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
         when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(List.of());
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimScoringPersistenceService.recordScoreRun(
                 eq(claimId),
@@ -651,7 +666,7 @@ class ScoringEngineUnitTest {
 
         when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
         when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(List.of());
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimScoringPersistenceService.recordScoreRun(
                 eq(claimId),
@@ -712,7 +727,7 @@ class ScoringEngineUnitTest {
         when(claimRepository.findById(noDocApprovalClaimId)).thenReturn(Optional.of(noDocClaim));
         when(claimDocumentRepository.findByClaimId(docReadyClaimId)).thenReturn(docReadyDocuments);
         when(claimDocumentRepository.findByClaimId(noDocApprovalClaimId)).thenReturn(List.of());
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimScoringPersistenceService.recordScoreRun(
                 any(),
@@ -786,7 +801,7 @@ class ScoringEngineUnitTest {
 
         when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
         when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(documents);
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimScoringPersistenceService.recordScoreRun(
                 eq(claimId),
@@ -843,7 +858,7 @@ class ScoringEngineUnitTest {
         Claim claim = buildApprovedClaim(claimId, DisputeStatus.NONE, new BigDecimal("1800.00"));
         Ruleset ruleset = buildActiveRuleset(44L, 1, validScoringConfigV1());
 
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
         when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(List.of());
@@ -896,7 +911,7 @@ class ScoringEngineUnitTest {
         claim.setStatus(ClaimStatus.UNDER_REVIEW);
         Ruleset ruleset = buildActiveRuleset(55L, 1, validScoringConfigV1());
 
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.of(ruleset));
         when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
 
@@ -909,7 +924,7 @@ class ScoringEngineUnitTest {
     @Test
     void autoScoreOnApprovalIfReady_returnsFalseWhenNoActiveRulesetExists() {
         Long claimId = 606L;
-        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
                 .thenReturn(Optional.empty());
 
         boolean scored = scoringEngine.autoScoreOnApprovalIfReady(claimId, 77L);
@@ -1108,5 +1123,90 @@ class ScoringEngineUnitTest {
                   ]
                 }
                 """;
+    }
+
+    private void assertFixedScoreMapsToGrade(Long claimId, int expectedScore, String expectedGrade) {
+        Claim claim = buildApprovedClaim(claimId, DisputeStatus.NONE, new BigDecimal("1200.00"));
+        Ruleset ruleset = buildActiveRuleset(500L + claimId, 1, fixedScoreGradeBandConfig(expectedScore));
+
+        when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
+        when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(List.of());
+        when(rulesetRepository.findFirstByTypeAndStatusOrderByVersionDescIdDesc(RulesetType.SCORING, RulesetStatus.ACTIVE))
+                .thenReturn(Optional.of(ruleset));
+        when(claimScoringPersistenceService.recordScoreRun(
+                eq(claimId),
+                eq(500L + claimId),
+                eq(1),
+                anyBoolean(),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(41L),
+                eq(ScoringTrigger.APPROVAL)
+        )).thenAnswer(invocation -> null);
+
+        scoringEngine.scoreClaim(claimId, 41L, false);
+
+        ArgumentCaptor<Integer> scoreCaptor = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<String> gradeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(claimScoringPersistenceService).recordScoreRun(
+                eq(claimId),
+                eq(500L + claimId),
+                eq(1),
+                eq(true),
+                scoreCaptor.capture(),
+                gradeCaptor.capture(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(41L),
+                eq(ScoringTrigger.APPROVAL)
+        );
+
+        assertThat(scoreCaptor.getValue()).isEqualTo(expectedScore);
+        assertThat(gradeCaptor.getValue()).isEqualTo(expectedGrade);
+    }
+
+    private String fixedScoreGradeBandConfig(int score) {
+        return """
+                {
+                  "eligibility": {
+                    "requiredClaimStatus": "APPROVED",
+                    "requiredDocTypes": [],
+                    "minExtractionSuccessRate": 0.0,
+                    "blockActiveDisputes": false
+                  },
+                  "weights": {
+                    "enforceability": 0.35,
+                    "documentation": 0.30,
+                    "collectability": 0.25,
+                    "operationalRisk": 0.10
+                  },
+                  "gradeBands": [
+                    {"grade":"F","minScore":0},
+                    {"grade":"D","minScore":35},
+                    {"grade":"C","minScore":50},
+                    {"grade":"B","minScore":65},
+                    {"grade":"A","minScore":80}
+                  ],
+                  "caps": {
+                    "enforceabilityMax": 100,
+                    "documentationMax": 100,
+                    "collectabilityMax": 100,
+                    "operationalRiskMax": 100
+                  },
+                  "rules": [
+                    {"id":"FIXED_SCORE","group":"enforceability","when":{"docCountGte":0},"points":%d,"reason":"Fixed score test"}
+                  ]
+                }
+                """.formatted(score);
     }
 }
