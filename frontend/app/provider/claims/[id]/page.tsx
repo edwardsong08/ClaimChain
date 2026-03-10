@@ -1,11 +1,12 @@
 "use client";
 
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuthSession } from "@/hooks/use-auth-session";
+import { isApprovalGateForbiddenError } from "@/lib/api-error-utils";
 import { getClaimById } from "@/services/claims";
 import {
   downloadClaimDocument,
@@ -182,6 +183,7 @@ const DOCUMENT_TYPE_OPTIONS = [
 ] as const;
 
 export default function ClaimDetailPage() {
+  const router = useRouter();
   const params = useParams();
   const idParam = params?.id;
   const claimId = Array.isArray(idParam) ? idParam[0] : idParam;
@@ -223,6 +225,15 @@ export default function ClaimDetailPage() {
     },
     enabled: isReady && isAuthenticated && Boolean(token) && Boolean(claimId),
   });
+
+  const shouldRedirectForApproval =
+    claimQuery.isError && isApprovalGateForbiddenError(claimQuery.error);
+
+  useEffect(() => {
+    if (shouldRedirectForApproval) {
+      router.replace("/provider/pending-approval");
+    }
+  }, [router, shouldRedirectForApproval]);
 
   const uploadDocumentMutation = useMutation({
     mutationFn: async () => {
@@ -316,6 +327,58 @@ export default function ClaimDetailPage() {
     event.preventDefault();
     await uploadDocumentMutation.mutateAsync();
   };
+
+  if (!isReady) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Loading session...</p>
+      </main>
+    );
+  }
+
+  if (!isAuthenticated || !token) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-red-600">
+          You must be logged in to view claim details.
+        </p>
+      </main>
+    );
+  }
+
+  if (!claimId) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Claim not found.</p>
+      </main>
+    );
+  }
+
+  if (claimQuery.isPending || shouldRedirectForApproval) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Checking account approval...</p>
+      </main>
+    );
+  }
+
+  if (claimQuery.isError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-red-600">
+          {getErrorMessage(claimQuery.error, "Unable to load claim details.")}
+        </p>
+      </main>
+    );
+  }
+
+  if (!claimQuery.data) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Claim not found.</p>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen px-6 py-10">

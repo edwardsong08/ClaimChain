@@ -129,8 +129,7 @@ public class ClaimService {
     }
 
     public List<ClaimResponseDTO> getClaimsForUser(String email) {
-        User user = userRepository.findByEmail(email);
-        if (user == null) throw new RuntimeException("User not found with email: " + email);
+        User user = authorizationService.requireApprovedServiceProvider(email);
 
         List<Claim> claims = claimRepository.findByUser(user);
         return claims.stream().map(this::mapToDTO).collect(Collectors.toList());

@@ -1,15 +1,16 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { useAuthSession } from "@/hooks/use-auth-session";
-import { createClaim } from "@/services/claims";
+import { isApprovalGateForbiddenError } from "@/lib/api-error-utils";
+import { createClaim, listClaims } from "@/services/claims";
 import { uploadClaimDocument } from "@/services/documents";
 import type { CreateClaimRequest } from "@/types/claims";
 
@@ -190,6 +191,28 @@ export default function NewProviderClaimPage() {
     },
   });
 
+  const approvalProbeQuery = useQuery({
+    queryKey: ["provider-new-claim-approval-probe", token],
+    queryFn: () => {
+      if (!token) {
+        throw new Error("You must be logged in to submit claims.");
+      }
+      return listClaims(token);
+    },
+    enabled: isReady && isAuthenticated && Boolean(token),
+    retry: false,
+  });
+
+  const shouldRedirectForApproval =
+    approvalProbeQuery.isError &&
+    isApprovalGateForbiddenError(approvalProbeQuery.error);
+
+  useEffect(() => {
+    if (shouldRedirectForApproval) {
+      router.replace("/provider/pending-approval");
+    }
+  }, [router, shouldRedirectForApproval]);
+
   const createClaimMutation = useMutation({
     mutationFn: (payload: CreateClaimRequest) => {
       if (!token) {
@@ -314,6 +337,45 @@ export default function NewProviderClaimPage() {
     router.replace(`/provider/claims/${createdClaim.id}`);
   };
 
+  if (!isReady) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Loading session...</p>
+      </main>
+    );
+  }
+
+  if (!isAuthenticated || !token) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-red-600">
+          You must be logged in to submit claims.
+        </p>
+      </main>
+    );
+  }
+
+  if (approvalProbeQuery.isPending || shouldRedirectForApproval) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Checking account approval...</p>
+      </main>
+    );
+  }
+
+  if (approvalProbeQuery.isError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-red-600">
+          {getErrorMessage(
+            approvalProbeQuery.error,
+            "Unable to verify provider access."
+          )}
+        </p>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen px-6 py-10">
       <div className="mx-auto w-full max-w-3xl space-y-6">
@@ -323,14 +385,6 @@ export default function NewProviderClaimPage() {
             Submit claim intake details for provider processing.
           </p>
         </header>
-
-        {!isReady ? (
-          <p className="text-sm text-gray-600">Loading session...</p>
-        ) : !isAuthenticated ? (
-          <p className="text-sm text-red-600">
-            You must be logged in to submit claims.
-          </p>
-        ) : null}
 
         <form
           onSubmit={handleSubmit(onSubmit)}

@@ -48,6 +48,7 @@ public class ClaimController {
         return ResponseEntity.ok(responseDTO);
     }
 
+    @PreAuthorize("hasRole('SERVICE_PROVIDER')")
     @GetMapping
     public ResponseEntity<List<ClaimResponseDTO>> getUserClaims(Principal principal) {
         List<ClaimResponseDTO> claims = claimService.getClaimsForUser(principal.getName());

@@ -62,6 +62,7 @@ class BuyerAccessIntegrationTest {
     private static final String ADMIN_EMAIL = "admin@buyer-access-test.local";
     private static final String PROVIDER_EMAIL = "provider@buyer-access-test.local";
     private static final String BUYER_EMAIL = "buyer@buyer-access-test.local";
+    private static final String PENDING_BUYER_EMAIL = "buyer-pending@buyer-access-test.local";
     private static final String TEST_EMAIL_PATTERN = "%@buyer-access-test.local";
 
     @Autowired
@@ -97,6 +98,7 @@ class BuyerAccessIntegrationTest {
     private String adminToken;
     private String providerToken;
     private String buyerToken;
+    private String pendingBuyerToken;
     private Ruleset scoringRuleset;
 
     private Long listedPackageId;
@@ -111,10 +113,12 @@ class BuyerAccessIntegrationTest {
         adminUser = createUser(ADMIN_EMAIL, Role.ADMIN, VerificationStatus.APPROVED);
         providerUser = createUser(PROVIDER_EMAIL, Role.SERVICE_PROVIDER, VerificationStatus.APPROVED);
         buyerUser = createUser(BUYER_EMAIL, Role.COLLECTION_AGENCY, VerificationStatus.APPROVED);
+        createUser(PENDING_BUYER_EMAIL, Role.COLLECTION_AGENCY, VerificationStatus.PENDING);
 
         adminToken = loginAndGetAccessToken(ADMIN_EMAIL);
         providerToken = loginAndGetAccessToken(PROVIDER_EMAIL);
         buyerToken = loginAndGetAccessToken(BUYER_EMAIL);
+        pendingBuyerToken = loginAndGetAccessToken(PENDING_BUYER_EMAIL);
 
         scoringRuleset = createScoringRuleset(adminUser);
         createPackagingRuleset(adminUser, 1, buyerPackagingConfig());
@@ -351,6 +355,18 @@ class BuyerAccessIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andReturn();
         assertApiError(detailResult, "FORBIDDEN");
+    }
+
+    @Test
+    void pendingBuyerCannotAccessBuyerPackages() throws Exception {
+        MvcResult listResult = mockMvc.perform(
+                        get("/api/buyer/packages")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + pendingBuyerToken)
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+        assertApiError(listResult, "FORBIDDEN");
     }
 
     @Test

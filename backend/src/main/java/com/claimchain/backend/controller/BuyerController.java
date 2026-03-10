@@ -8,6 +8,7 @@ import com.claimchain.backend.model.AnonymizedClaimView;
 import com.claimchain.backend.model.Package;
 import com.claimchain.backend.model.User;
 import com.claimchain.backend.repository.UserRepository;
+import com.claimchain.backend.security.AuthorizationService;
 import com.claimchain.backend.service.BuyerPackageService;
 import com.claimchain.backend.service.PurchaseService;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -36,23 +37,27 @@ public class BuyerController {
     private final BuyerPackageService buyerPackageService;
     private final PurchaseService purchaseService;
     private final UserRepository userRepository;
+    private final AuthorizationService authorizationService;
     private final ObjectMapper objectMapper;
 
     public BuyerController(
             BuyerPackageService buyerPackageService,
             PurchaseService purchaseService,
             UserRepository userRepository,
+            AuthorizationService authorizationService,
             ObjectMapper objectMapper
     ) {
         this.buyerPackageService = buyerPackageService;
         this.purchaseService = purchaseService;
         this.userRepository = userRepository;
+        this.authorizationService = authorizationService;
         this.objectMapper = objectMapper;
     }
 
     @GetMapping("/packages")
     @PreAuthorize("hasRole('COLLECTION_AGENCY')")
-    public ResponseEntity<List<BuyerPackageSummaryResponseDTO>> listListedPackages() {
+    public ResponseEntity<List<BuyerPackageSummaryResponseDTO>> listListedPackages(Principal principal) {
+        requireApprovedBuyerAccess(principal);
         List<BuyerPackageSummaryResponseDTO> response = buyerPackageService.listListedPackages()
                 .stream()
                 .map(this::toBuyerPackageSummary)
@@ -62,7 +67,8 @@ public class BuyerController {
 
     @GetMapping("/packages/{id}")
     @PreAuthorize("hasRole('COLLECTION_AGENCY')")
-    public ResponseEntity<BuyerPackageDetailResponseDTO> getListedPackage(@PathVariable Long id) {
+    public ResponseEntity<BuyerPackageDetailResponseDTO> getListedPackage(@PathVariable Long id, Principal principal) {
+        requireApprovedBuyerAccess(principal);
         BuyerPackageService.ListedPackageDetail detail = buyerPackageService.getListedPackageWithAnonymizedViews(id);
         BuyerPackageDetailResponseDTO response = toBuyerPackageDetail(detail);
         return ResponseEntity.ok(response);
@@ -75,6 +81,7 @@ public class BuyerController {
             @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
             Principal principal
     ) {
+        requireApprovedBuyerAccess(principal);
         Long buyerUserId = requirePrincipalUserId(principal);
         PurchaseService.CheckoutResult result = purchaseService.createCheckout(id, buyerUserId, idempotencyKey);
         BuyerCheckoutResponseDTO response = new BuyerCheckoutResponseDTO();
@@ -90,6 +97,7 @@ public class BuyerController {
             @PathVariable Long id,
             Principal principal
     ) {
+        requireApprovedBuyerAccess(principal);
         Long buyerUserId = requirePrincipalUserId(principal);
         BuyerPackageService.EntitledPackageExport export = buyerPackageService.exportEntitledPackage(id, buyerUserId);
 
@@ -171,5 +179,10 @@ public class BuyerController {
             throw new IllegalArgumentException("Buyer user not found.");
         }
         return user.getId();
+    }
+
+    private void requireApprovedBuyerAccess(Principal principal) {
+        String email = principal == null ? null : principal.getName();
+        authorizationService.requireApprovedCollectionAgency(email);
     }
 }

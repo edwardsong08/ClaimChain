@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthSession } from "@/hooks/use-auth-session";
+import { isApprovalGateForbiddenError } from "@/lib/api-error-utils";
 import { listBuyerPackages } from "@/services/buyer";
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
@@ -55,6 +58,7 @@ function statusForDisplay() {
 }
 
 export default function BuyerDashboardPage() {
+  const router = useRouter();
   const { token, isReady, isAuthenticated } = useAuthSession();
 
   const packagesQuery = useQuery({
@@ -68,6 +72,51 @@ export default function BuyerDashboardPage() {
     enabled: isReady && isAuthenticated && Boolean(token),
   });
 
+  const shouldRedirectForApproval =
+    packagesQuery.isError && isApprovalGateForbiddenError(packagesQuery.error);
+
+  useEffect(() => {
+    if (shouldRedirectForApproval) {
+      router.replace("/buyer/pending-approval");
+    }
+  }, [router, shouldRedirectForApproval]);
+
+  if (!isReady) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Loading session...</p>
+      </main>
+    );
+  }
+
+  if (!isAuthenticated || !token) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-red-600">
+          You must be logged in as buyer to view marketplace packages.
+        </p>
+      </main>
+    );
+  }
+
+  if (packagesQuery.isPending || shouldRedirectForApproval) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Checking account approval...</p>
+      </main>
+    );
+  }
+
+  if (packagesQuery.isError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-red-600">
+          {getErrorMessage(packagesQuery.error, "Failed to load listed packages.")}
+        </p>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen px-6 py-10">
       <div className="mx-auto w-full max-w-5xl space-y-6">
@@ -78,51 +127,35 @@ export default function BuyerDashboardPage() {
           </p>
         </header>
 
-        {!isReady ? (
-          <div className="rounded-lg border p-4 text-sm text-gray-600">
-            Loading session...
-          </div>
-        ) : !isAuthenticated || !token ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            You must be logged in as buyer to view marketplace packages.
-          </div>
-        ) : (
-          <section className="space-y-3 rounded-lg border p-5">
-            <h2 className="text-xl font-semibold">Listed Packages</h2>
+        <section className="space-y-3 rounded-lg border p-5">
+          <h2 className="text-xl font-semibold">Listed Packages</h2>
 
-            {packagesQuery.isPending ? (
-              <p className="text-sm text-gray-600">Loading listed packages...</p>
-            ) : packagesQuery.isError ? (
-              <p className="text-sm text-red-600">
-                {getErrorMessage(packagesQuery.error, "Failed to load listed packages.")}
-              </p>
-            ) : packagesQuery.data.length === 0 ? (
-              <p className="text-sm text-gray-600">No listed packages are available right now.</p>
-            ) : (
-              <ul className="space-y-2">
-                {packagesQuery.data.map((pkg) => (
-                  <li key={pkg.id} className="rounded-md border p-3">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="space-y-1 text-sm">
-                        <p>Package ID: {pkg.id}</p>
-                        <p>Status: {statusForDisplay()}</p>
-                        <p>Total Claims: {pkg.totalClaims ?? 0}</p>
-                        <p>Total Face Value: {formatCurrency(pkg.totalFaceValue)}</p>
-                        <p>Created: {formatDate(pkg.createdAt)}</p>
-                      </div>
-                      <Link
-                        href={`/buyer/packages/${pkg.id}`}
-                        className="inline-flex rounded-md border px-3 py-1.5 text-sm font-medium"
-                      >
-                        View Package
-                      </Link>
+          {packagesQuery.data.length === 0 ? (
+            <p className="text-sm text-gray-600">No listed packages are available right now.</p>
+          ) : (
+            <ul className="space-y-2">
+              {packagesQuery.data.map((pkg) => (
+                <li key={pkg.id} className="rounded-md border p-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="space-y-1 text-sm">
+                      <p>Package ID: {pkg.id}</p>
+                      <p>Status: {statusForDisplay()}</p>
+                      <p>Total Claims: {pkg.totalClaims ?? 0}</p>
+                      <p>Total Face Value: {formatCurrency(pkg.totalFaceValue)}</p>
+                      <p>Created: {formatDate(pkg.createdAt)}</p>
                     </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
+                    <Link
+                      href={`/buyer/packages/${pkg.id}`}
+                      className="inline-flex rounded-md border px-3 py-1.5 text-sm font-medium"
+                    >
+                      View Package
+                    </Link>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
     </main>
   );

@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthSession } from "@/hooks/use-auth-session";
+import { isApprovalGateForbiddenError } from "@/lib/api-error-utils";
 import { getBuyerPackageDetail } from "@/services/buyer";
 import type { BuyerPackageClaimSummary } from "@/types/buyer";
 
@@ -75,6 +77,7 @@ function claimKey(claim: BuyerPackageClaimSummary, index: number) {
 }
 
 export default function BuyerPackageDetailPage() {
+  const router = useRouter();
   const params = useParams();
   const { token, isReady, isAuthenticated } = useAuthSession();
 
@@ -95,6 +98,68 @@ export default function BuyerPackageDetailPage() {
     enabled: isReady && isAuthenticated && Boolean(token) && Boolean(packageId),
   });
 
+  const shouldRedirectForApproval =
+    packageDetailQuery.isError &&
+    isApprovalGateForbiddenError(packageDetailQuery.error);
+
+  useEffect(() => {
+    if (shouldRedirectForApproval) {
+      router.replace("/buyer/pending-approval");
+    }
+  }, [router, shouldRedirectForApproval]);
+
+  if (!isReady) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Loading session...</p>
+      </main>
+    );
+  }
+
+  if (!isAuthenticated || !token) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-red-600">
+          You must be logged in as buyer to view this package.
+        </p>
+      </main>
+    );
+  }
+
+  if (!packageId) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Package not found.</p>
+      </main>
+    );
+  }
+
+  if (packageDetailQuery.isPending || shouldRedirectForApproval) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Checking account approval...</p>
+      </main>
+    );
+  }
+
+  if (packageDetailQuery.isError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-red-600">
+          {getErrorMessage(packageDetailQuery.error, "Package detail unavailable.")}
+        </p>
+      </main>
+    );
+  }
+
+  if (!packageDetailQuery.data) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Package not found.</p>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen px-6 py-10">
       <div className="mx-auto w-full max-w-5xl space-y-6">
@@ -111,82 +176,56 @@ export default function BuyerPackageDetailPage() {
           <p className="text-sm text-gray-600">Package ID: {packageId ?? "N/A"}</p>
         </header>
 
-        {!isReady ? (
-          <div className="rounded-lg border p-4 text-sm text-gray-600">
-            Loading session...
-          </div>
-        ) : !isAuthenticated || !token ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            You must be logged in as buyer to view this package.
-          </div>
-        ) : !packageId ? (
-          <div className="rounded-lg border p-4 text-sm text-gray-600">
-            Package not found.
-          </div>
-        ) : packageDetailQuery.isPending ? (
-          <div className="rounded-lg border p-4 text-sm text-gray-600">
-            Loading package detail...
-          </div>
-        ) : packageDetailQuery.isError ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            {getErrorMessage(packageDetailQuery.error, "Package detail unavailable.")}
-          </div>
-        ) : !packageDetailQuery.data ? (
-          <div className="rounded-lg border p-4 text-sm text-gray-600">
-            Package not found.
-          </div>
-        ) : (
-          <>
-            <section className="space-y-3 rounded-lg border p-5">
-              <h2 className="text-xl font-semibold">Summary</h2>
-              <div className="grid gap-2 text-sm">
-                <p>Package ID: {packageDetailQuery.data.id}</p>
-                <p>Status: LISTED</p>
-                <p>Total Claims: {packageDetailQuery.data.totalClaims ?? 0}</p>
-                <p>
-                  Total Face Value: {formatCurrency(packageDetailQuery.data.totalFaceValue)}
-                </p>
-                <p>Created: {formatDate(packageDetailQuery.data.createdAt)}</p>
-              </div>
-            </section>
-
-            <section className="space-y-3 rounded-lg border p-5">
-              <h2 className="text-xl font-semibold">Included Claim Summaries</h2>
-              {Array.isArray(packageDetailQuery.data.claims) &&
-              packageDetailQuery.data.claims.length > 0 ? (
-                <ul className="space-y-2">
-                  {packageDetailQuery.data.claims.map((claim, index) => (
-                    <li key={claimKey(claim, index)} className="rounded-md border p-3 text-sm">
-                      <p>Claim ID: {typeof claim.claimId === "number" ? claim.claimId : "N/A"}</p>
-                      <p>Score: {typeof claim.scoreTotal === "number" ? claim.scoreTotal : "N/A"}</p>
-                      <p>Grade: {textValue(claim.grade)}</p>
-                      <p>
-                        Extraction Success: {formatPercent(claim.extractionSuccessRate)}
-                      </p>
-                      <p>Jurisdiction: {textValue(claim.jurisdictionState)}</p>
-                      <p>Debtor Type: {textValue(claim.debtorType)}</p>
-                      <p>Claim Type: {textValue(claim.claimType)}</p>
-                      <p>Dispute Status: {formatStatus(claim.disputeStatus)}</p>
-                      <p>Debt Age (days): {typeof claim.debtAgeDays === "number" ? claim.debtAgeDays : "N/A"}</p>
-                      <p>Amount Band: {textValue(claim.amountBand)}</p>
-                      <p>Document Types: {textValue(claim.docTypesPresent)}</p>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-600">
-                  No anonymized claim summaries are available for this package yet.
-                </p>
-              )}
-            </section>
-
-            <section className="rounded-lg border p-5">
-              <p className="text-sm text-gray-600">
-                Checkout flow will be added next.
+        <>
+          <section className="space-y-3 rounded-lg border p-5">
+            <h2 className="text-xl font-semibold">Summary</h2>
+            <div className="grid gap-2 text-sm">
+              <p>Package ID: {packageDetailQuery.data.id}</p>
+              <p>Status: LISTED</p>
+              <p>Total Claims: {packageDetailQuery.data.totalClaims ?? 0}</p>
+              <p>
+                Total Face Value: {formatCurrency(packageDetailQuery.data.totalFaceValue)}
               </p>
-            </section>
-          </>
-        )}
+              <p>Created: {formatDate(packageDetailQuery.data.createdAt)}</p>
+            </div>
+          </section>
+
+          <section className="space-y-3 rounded-lg border p-5">
+            <h2 className="text-xl font-semibold">Included Claim Summaries</h2>
+            {Array.isArray(packageDetailQuery.data.claims) &&
+            packageDetailQuery.data.claims.length > 0 ? (
+              <ul className="space-y-2">
+                {packageDetailQuery.data.claims.map((claim, index) => (
+                  <li key={claimKey(claim, index)} className="rounded-md border p-3 text-sm">
+                    <p>Claim ID: {typeof claim.claimId === "number" ? claim.claimId : "N/A"}</p>
+                    <p>Score: {typeof claim.scoreTotal === "number" ? claim.scoreTotal : "N/A"}</p>
+                    <p>Grade: {textValue(claim.grade)}</p>
+                    <p>
+                      Extraction Success: {formatPercent(claim.extractionSuccessRate)}
+                    </p>
+                    <p>Jurisdiction: {textValue(claim.jurisdictionState)}</p>
+                    <p>Debtor Type: {textValue(claim.debtorType)}</p>
+                    <p>Claim Type: {textValue(claim.claimType)}</p>
+                    <p>Dispute Status: {formatStatus(claim.disputeStatus)}</p>
+                    <p>Debt Age (days): {typeof claim.debtAgeDays === "number" ? claim.debtAgeDays : "N/A"}</p>
+                    <p>Amount Band: {textValue(claim.amountBand)}</p>
+                    <p>Document Types: {textValue(claim.docTypesPresent)}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-600">
+                No anonymized claim summaries are available for this package yet.
+              </p>
+            )}
+          </section>
+
+          <section className="rounded-lg border p-5">
+            <p className="text-sm text-gray-600">
+              Checkout flow will be added next.
+            </p>
+          </section>
+        </>
       </div>
     </main>
   );

@@ -3,6 +3,7 @@ package com.claimchain.backend.security;
 import com.claimchain.backend.model.Claim;
 import com.claimchain.backend.model.Role;
 import com.claimchain.backend.model.User;
+import com.claimchain.backend.model.VerificationStatus;
 import com.claimchain.backend.repository.UserRepository;
 import com.claimchain.backend.service.ClaimService;
 import org.springframework.security.access.AccessDeniedException;
@@ -44,6 +45,22 @@ public class AuthorizationService {
         return user != null && user.getRole() == Role.COLLECTION_AGENCY;
     }
 
+    public User requireApprovedServiceProvider(String email) {
+        User user = requireUser(email);
+        if (!isServiceProvider(user) || user.getVerificationStatus() != VerificationStatus.APPROVED) {
+            throw new AccessDeniedException("You do not have permission to access this resource.");
+        }
+        return user;
+    }
+
+    public User requireApprovedCollectionAgency(String email) {
+        User user = requireUser(email);
+        if (!isCollectionAgency(user) || user.getVerificationStatus() != VerificationStatus.APPROVED) {
+            throw new AccessDeniedException("You do not have permission to access this resource.");
+        }
+        return user;
+    }
+
     public void requireClaimAccess(Claim claim, User requester) {
         if (isAdmin(requester)) {
             return;
@@ -54,6 +71,9 @@ public class AuthorizationService {
         }
 
         if (isServiceProvider(requester)) {
+            if (requester.getVerificationStatus() != VerificationStatus.APPROVED) {
+                throw new AccessDeniedException("You do not have permission to access this resource.");
+            }
             String ownerEmail = claim.getUser() == null ? null : normalizeEmail(claim.getUser().getEmail());
             String requesterEmail = normalizeEmail(requester.getEmail());
 

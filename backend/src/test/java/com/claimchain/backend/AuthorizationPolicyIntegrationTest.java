@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -177,6 +178,29 @@ class AuthorizationPolicyIntegrationTest {
 
         int successStatus = approvedProviderResult.getResponse().getStatus();
         assertThat(successStatus).isIn(200, 201);
+    }
+
+    @Test
+    void claimListing_requiresApprovedProviderVerification() throws Exception {
+        String pendingProviderToken = loginAndGetAccessToken(PENDING_PROVIDER_EMAIL, PASSWORD);
+        String approvedProviderToken = loginAndGetAccessToken(APPROVED_PROVIDER_EMAIL, PASSWORD);
+
+        MvcResult pendingProviderResult = mockMvc.perform(
+                        get("/api/claims")
+                                .header("Authorization", "Bearer " + pendingProviderToken)
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+        assertApiError(pendingProviderResult, "FORBIDDEN");
+
+        mockMvc.perform(
+                        get("/api/claims")
+                                .header("Authorization", "Bearer " + approvedProviderToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$").isArray());
     }
 
     private User createUser(String email, Role role, VerificationStatus status, Instant verifiedAt) {

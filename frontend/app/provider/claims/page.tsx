@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthSession } from "@/hooks/use-auth-session";
+import { isApprovalGateForbiddenError } from "@/lib/api-error-utils";
 import { listClaims } from "@/services/claims";
 import type { Claim } from "@/types/claims";
 
@@ -50,6 +53,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 export default function ProviderClaimsPage() {
+  const router = useRouter();
   const { token, isReady, isAuthenticated } = useAuthSession();
 
   const claimsQuery = useQuery({
@@ -62,6 +66,51 @@ export default function ProviderClaimsPage() {
     },
     enabled: isReady && isAuthenticated && Boolean(token),
   });
+
+  const shouldRedirectForApproval =
+    claimsQuery.isError && isApprovalGateForbiddenError(claimsQuery.error);
+
+  useEffect(() => {
+    if (shouldRedirectForApproval) {
+      router.replace("/provider/pending-approval");
+    }
+  }, [router, shouldRedirectForApproval]);
+
+  if (!isReady) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Loading session...</p>
+      </main>
+    );
+  }
+
+  if (!isAuthenticated || !token) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-red-600">
+          You must be logged in to view claims.
+        </p>
+      </main>
+    );
+  }
+
+  if (claimsQuery.isPending || shouldRedirectForApproval) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-gray-600">Checking account approval...</p>
+      </main>
+    );
+  }
+
+  if (claimsQuery.isError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6 py-10">
+        <p className="text-sm text-red-600">
+          {getErrorMessage(claimsQuery.error, "Unable to load claims.")}
+        </p>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen px-6 py-10">
@@ -82,23 +131,7 @@ export default function ProviderClaimsPage() {
           </Link>
         </div>
 
-        {!isReady ? (
-          <div className="rounded-lg border p-4 text-sm text-gray-600">
-            Loading session...
-          </div>
-        ) : !isAuthenticated || !token ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            You must be logged in to view claims.
-          </div>
-        ) : claimsQuery.isPending ? (
-          <div className="rounded-lg border p-4 text-sm text-gray-600">
-            Loading claims...
-          </div>
-        ) : claimsQuery.isError ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            {getErrorMessage(claimsQuery.error, "Unable to load claims.")}
-          </div>
-        ) : claimsQuery.data.length === 0 ? (
+        {claimsQuery.data.length === 0 ? (
           <div className="rounded-lg border p-6 text-sm text-gray-600">
             No claims found yet. Use the Submit New Claim action to create your first
             claim.
