@@ -60,6 +60,7 @@ public class PackagingRulesetConfig {
         private String minGrade;
         private BigDecimal minBalance;
         private Boolean requireJurisdictionKnown;
+        private Boolean requireInvoiceDocument;
         private List<String> requiredDocTypes;
         private Double minExtractionSuccessRate;
         private List<String> excludeDisputeStatuses;
@@ -94,6 +95,14 @@ public class PackagingRulesetConfig {
 
         public void setRequireJurisdictionKnown(Boolean requireJurisdictionKnown) {
             this.requireJurisdictionKnown = requireJurisdictionKnown;
+        }
+
+        public Boolean getRequireInvoiceDocument() {
+            return requireInvoiceDocument;
+        }
+
+        public void setRequireInvoiceDocument(Boolean requireInvoiceDocument) {
+            this.requireInvoiceDocument = requireInvoiceDocument;
         }
 
         public List<String> getRequiredDocTypes() {

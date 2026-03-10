@@ -194,7 +194,60 @@ class ScoringEngineUnitTest {
         );
 
         assertThat(scoreCaptor.getValue()).isEqualTo(83);
-        assertThat(gradeCaptor.getValue()).isEqualTo("B");
+        assertThat(gradeCaptor.getValue()).isEqualTo("A");
+    }
+
+    @Test
+    void scoreClaim_documentedLowerTierClaimIn38To44Range_gradesAsD() {
+        Long claimId = 219L;
+        Claim claim = buildApprovedClaim(claimId, DisputeStatus.NONE, new BigDecimal("1200.00"));
+        List<ClaimDocument> documents = List.of(buildDocument(DocumentType.OTHER, ExtractionStatus.SUCCEEDED, 80));
+        Ruleset ruleset = buildActiveRuleset(37L, 1, lowerTierGradeBandConfig());
+
+        when(claimRepository.findById(claimId)).thenReturn(Optional.of(claim));
+        when(claimDocumentRepository.findByClaimId(claimId)).thenReturn(documents);
+        when(rulesetRepository.findFirstByTypeAndStatus(RulesetType.SCORING, RulesetStatus.ACTIVE))
+                .thenReturn(Optional.of(ruleset));
+        when(claimScoringPersistenceService.recordScoreRun(
+                eq(claimId),
+                eq(37L),
+                eq(1),
+                anyBoolean(),
+                anyInt(),
+                anyString(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(19L),
+                eq(ScoringTrigger.APPROVAL)
+        )).thenAnswer(invocation -> null);
+
+        scoringEngine.scoreClaim(claimId, 19L, false);
+
+        ArgumentCaptor<Integer> scoreCaptor = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<String> gradeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(claimScoringPersistenceService).recordScoreRun(
+                eq(claimId),
+                eq(37L),
+                eq(1),
+                eq(true),
+                scoreCaptor.capture(),
+                gradeCaptor.capture(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(19L),
+                eq(ScoringTrigger.APPROVAL)
+        );
+
+        assertThat(scoreCaptor.getValue()).isBetween(38, 44);
+        assertThat(gradeCaptor.getValue()).isEqualTo("D");
     }
 
     @Test
@@ -922,10 +975,10 @@ class ScoringEngineUnitTest {
                     "operationalRisk": 0.10
                   },
                   "gradeBands": [
-                    {"grade":"A","minScore":85},
-                    {"grade":"B","minScore":70},
-                    {"grade":"C","minScore":55},
-                    {"grade":"D","minScore":40},
+                    {"grade":"A","minScore":80},
+                    {"grade":"B","minScore":65},
+                    {"grade":"C","minScore":50},
+                    {"grade":"D","minScore":35},
                     {"grade":"F","minScore":0}
                   ],
                   "caps": {
@@ -962,10 +1015,10 @@ class ScoringEngineUnitTest {
                     "operationalRisk": 0.10
                   },
                   "gradeBands": [
-                    {"grade":"A","minScore":85},
-                    {"grade":"B","minScore":70},
-                    {"grade":"C","minScore":55},
-                    {"grade":"D","minScore":40},
+                    {"grade":"A","minScore":80},
+                    {"grade":"B","minScore":65},
+                    {"grade":"C","minScore":50},
+                    {"grade":"D","minScore":35},
                     {"grade":"F","minScore":0}
                   ],
                   "caps": {
@@ -976,6 +1029,42 @@ class ScoringEngineUnitTest {
                   },
                   "rules": [
                     {"id":"GRADE_RULE","group":"enforceability","when":{"jurisdictionKnown":true},"points":72,"reason":"Grade threshold rule"}
+                  ]
+                }
+                """;
+    }
+
+    private String lowerTierGradeBandConfig() {
+        return """
+                {
+                  "eligibility": {
+                    "requiredClaimStatus": "APPROVED",
+                    "requiredDocTypes": [],
+                    "minExtractionSuccessRate": 0.0,
+                    "blockActiveDisputes": false
+                  },
+                  "weights": {
+                    "enforceability": 0.35,
+                    "documentation": 0.30,
+                    "collectability": 0.25,
+                    "operationalRisk": 0.10
+                  },
+                  "gradeBands": [
+                    {"grade":"A","minScore":80},
+                    {"grade":"B","minScore":65},
+                    {"grade":"C","minScore":50},
+                    {"grade":"D","minScore":35},
+                    {"grade":"F","minScore":0}
+                  ],
+                  "caps": {
+                    "enforceabilityMax": 100,
+                    "documentationMax": 100,
+                    "collectabilityMax": 100,
+                    "operationalRiskMax": 100
+                  },
+                  "rules": [
+                    {"id":"DOC_PRESENT","group":"documentation","when":{"docCountGte":1},"points":20,"reason":"Documented claim"},
+                    {"id":"JURISDICTION_KNOWN","group":"enforceability","when":{"jurisdictionKnown":true},"points":18,"reason":"Jurisdiction provided"}
                   ]
                 }
                 """;

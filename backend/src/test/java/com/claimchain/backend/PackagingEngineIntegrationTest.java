@@ -261,10 +261,10 @@ class PackagingEngineIntegrationTest {
     }
 
     @Test
-    void buildPackageDryRun_acceptsInvoiceOrContractPrimaryProof_andStillAppliesOtherEligibilityGates() throws Exception {
-        createPackagingRuleset(adminUser, 1, defaultPackagingConfig(2));
+    void buildPackageDryRun_allowsLowerTierDocumentedClaimAtScore35Plus_andStillAppliesOtherEligibilityGates() throws Exception {
+        createPackagingRuleset(adminUser, 1, defaultPackagingConfig(1));
 
-        Claim invoiceOnlyEligible = createApprovedClaim("Invoice Eligible", new BigDecimal("700.00"), "NY", DebtorType.CONSUMER, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 1, 8, 0));
+        Claim invoiceOnlyEligible = createApprovedClaim("Invoice Eligible", new BigDecimal("1200.00"), "NY", DebtorType.CONSUMER, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 1, 8, 0));
         Claim contractOnlyEligible = createApprovedClaim("Contract Eligible", new BigDecimal("650.00"), "CA", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 2, 8, 0));
         Claim belowScore = createApprovedClaim("Below Score", new BigDecimal("600.00"), "TX", DebtorType.CONSUMER, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 3, 8, 0));
         Claim extractionBelowThreshold = createApprovedClaim("Extraction Below", new BigDecimal("550.00"), "WA", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 4, 8, 0));
@@ -274,11 +274,11 @@ class PackagingEngineIntegrationTest {
         createDocument(contractOnlyEligible, DocumentType.CONTRACT, ExtractionStatus.SUCCEEDED);
         createDocument(belowScore, DocumentType.INVOICE, ExtractionStatus.SUCCEEDED);
         createDocument(extractionBelowThreshold, DocumentType.INVOICE, ExtractionStatus.FAILED);
-        createDocument(disputed, DocumentType.CONTRACT, ExtractionStatus.SUCCEEDED);
+        createDocument(disputed, DocumentType.INVOICE, ExtractionStatus.SUCCEEDED);
 
-        recordScore(invoiceOnlyEligible, 95, "A");
+        recordScore(invoiceOnlyEligible, 38, "D");
         recordScore(contractOnlyEligible, 90, "A");
-        recordScore(belowScore, 50, "F");
+        recordScore(belowScore, 34, "F");
         recordScore(extractionBelowThreshold, 88, "B");
         recordScore(disputed, 92, "A");
 
@@ -296,15 +296,16 @@ class PackagingEngineIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.dryRun").value(true))
                 .andExpect(jsonPath("$.buildable").value(true))
-                .andExpect(jsonPath("$.totalClaims").value(2))
+                .andExpect(jsonPath("$.totalClaims").value(1))
                 .andReturn();
 
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
         List<Long> selectedClaimIds = new ArrayList<>();
         body.get("claimIds").forEach(node -> selectedClaimIds.add(node.asLong()));
 
-        assertThat(selectedClaimIds).containsExactly(invoiceOnlyEligible.getId(), contractOnlyEligible.getId());
+        assertThat(selectedClaimIds).containsExactly(invoiceOnlyEligible.getId());
         assertThat(selectedClaimIds).doesNotContain(
+                contractOnlyEligible.getId(),
                 belowScore.getId(),
                 extractionBelowThreshold.getId(),
                 disputed.getId()
@@ -483,6 +484,56 @@ class PackagingEngineIntegrationTest {
         assertThat(selectedClaimIds).doesNotContain(lowBalance.getId(), unknownJurisdiction.getId(), noDocs.getId());
     }
 
+    @Test
+    void dryRun_excludesDisputedListedAndSoldClaims_evenWhenScoreAndDocsPass() throws Exception {
+        createPackagingRuleset(adminUser, 1, defaultPackagingConfig(1));
+
+        Claim eligible = createApprovedClaim("Eligible", new BigDecimal("1200.00"), "NY", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 1, 16, 0));
+        Claim disputed = createApprovedClaim("Disputed", new BigDecimal("1200.00"), "CA", DebtorType.BUSINESS, DisputeStatus.ACTIVE, LocalDateTime.of(2026, 2, 2, 16, 0));
+        Claim listed = createApprovedClaim("Listed", new BigDecimal("1200.00"), "TX", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 3, 16, 0));
+        Claim sold = createApprovedClaim("Sold", new BigDecimal("1200.00"), "FL", DebtorType.BUSINESS, DisputeStatus.NONE, LocalDateTime.of(2026, 2, 4, 16, 0));
+
+        listed.setStatus(ClaimStatus.LISTED);
+        sold.setStatus(ClaimStatus.SOLD);
+        claimRepository.saveAndFlush(listed);
+        claimRepository.saveAndFlush(sold);
+
+        createDocument(eligible, DocumentType.INVOICE, ExtractionStatus.SUCCEEDED);
+        createDocument(disputed, DocumentType.INVOICE, ExtractionStatus.SUCCEEDED);
+        createDocument(listed, DocumentType.INVOICE, ExtractionStatus.SUCCEEDED);
+        createDocument(sold, DocumentType.INVOICE, ExtractionStatus.SUCCEEDED);
+
+        recordScore(eligible, 72, "B");
+        recordScore(disputed, 90, "A");
+        recordScore(listed, 90, "A");
+        recordScore(sold, 90, "A");
+
+        MvcResult result = mockMvc.perform(
+                        post("/api/admin/packages/build")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "dryRun": true
+                                        }
+                                        """)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.dryRun").value(true))
+                .andExpect(jsonPath("$.buildable").value(true))
+                .andExpect(jsonPath("$.totalClaims").value(1))
+                .andExpect(jsonPath("$.claimIds[0]").value(eligible.getId()))
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        List<Long> selectedClaimIds = new ArrayList<>();
+        body.get("claimIds").forEach(node -> selectedClaimIds.add(node.asLong()));
+
+        assertThat(selectedClaimIds).containsExactly(eligible.getId());
+        assertThat(selectedClaimIds).doesNotContain(disputed.getId(), listed.getId(), sold.getId());
+    }
+
     private Ruleset createScoringRuleset(User createdBy) {
         Ruleset ruleset = new Ruleset();
         ruleset.setType(RulesetType.SCORING);
@@ -598,11 +649,12 @@ class PackagingEngineIntegrationTest {
                 {
                   "schemaVersion": 1,
                   "eligibility": {
-                    "minScore": 50,
+                    "minScore": 35,
                     "minGrade": "D",
                     "minBalance": 500,
                     "requireJurisdictionKnown": true,
-                    "requiredDocTypes": ["INVOICE", "CONTRACT"],
+                    "requireInvoiceDocument": true,
+                    "requiredDocTypes": [],
                     "minExtractionSuccessRate": 0.6,
                     "excludeDisputeStatuses": ["ACTIVE"]
                   },

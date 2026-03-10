@@ -62,10 +62,10 @@ class ScoringEngineIntegrationTest {
                 "operationalRisk": 0.10
               },
               "gradeBands": [
-                {"grade":"A","minScore":85},
-                {"grade":"B","minScore":70},
-                {"grade":"C","minScore":55},
-                {"grade":"D","minScore":40},
+                {"grade":"A","minScore":80},
+                {"grade":"B","minScore":65},
+                {"grade":"C","minScore":50},
+                {"grade":"D","minScore":35},
                 {"grade":"F","minScore":0}
               ],
               "caps": {
@@ -101,10 +101,10 @@ class ScoringEngineIntegrationTest {
                 "operationalRisk": 0.10
               },
               "gradeBands": [
-                {"grade":"A","minScore":85},
-                {"grade":"B","minScore":70},
-                {"grade":"C","minScore":55},
-                {"grade":"D","minScore":40},
+                {"grade":"A","minScore":80},
+                {"grade":"B","minScore":65},
+                {"grade":"C","minScore":50},
+                {"grade":"D","minScore":35},
                 {"grade":"F","minScore":0}
               ],
               "caps": {

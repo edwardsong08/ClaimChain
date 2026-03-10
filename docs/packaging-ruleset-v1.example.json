@@ -1,8 +1,11 @@
 {
   "schemaVersion": 1,
   "eligibility": {
-    "minScore": 55,
-    "minGrade": "C",
+    "minScore": 35,
+    "minGrade": "D",
+    "minBalance": 500,
+    "requireJurisdictionKnown": true,
+    "requireInvoiceDocument": true,
     "requiredDocTypes": [],
     "minExtractionSuccessRate": 0.6,
     "excludeDisputeStatuses": ["ACTIVE"]

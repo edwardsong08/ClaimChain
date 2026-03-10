@@ -44,6 +44,7 @@ public class PackageService {
 
     private static final double EPSILON = 1e-9d;
     private static final String DEFAULT_BUCKET = "UNKNOWN";
+    private static final String INVOICE_DOC_TYPE = "INVOICE";
     private static final Set<String> PRIMARY_PROOF_DOC_TYPES = Set.of("INVOICE", "CONTRACT");
     private static final BigDecimal DEFAULT_MIN_BALANCE = new BigDecimal("500.00");
 
@@ -504,6 +505,7 @@ public class PackageService {
 
         boolean requireJurisdictionKnown = config.getEligibility().getRequireJurisdictionKnown() == null
                 || Boolean.TRUE.equals(config.getEligibility().getRequireJurisdictionKnown());
+        boolean requireInvoiceDocument = Boolean.TRUE.equals(config.getEligibility().getRequireInvoiceDocument());
 
         PackagingRuleContext context = new PackagingRuleContext();
         context.minScore = minScore;
@@ -511,6 +513,7 @@ public class PackageService {
         context.minGradeRank = minGradeRank;
         context.minBalance = minBalance;
         context.requireJurisdictionKnown = requireJurisdictionKnown;
+        context.requireInvoiceDocument = requireInvoiceDocument;
         context.requiredDocTypes = requiredDocTypes;
         context.minExtractionSuccessRate = minExtractionSuccessRate;
         context.excludedDisputeStatuses = excludedDisputeStatuses;
@@ -548,6 +551,7 @@ public class PackageService {
             candidate.extractionSuccessRate = eligibility.extractionSuccessRate;
             candidate.requiredDocTypesPresent = eligibility.requiredDocTypesPresent;
             candidate.jurisdictionKnown = eligibility.jurisdictionKnown;
+            candidate.invoicePresent = eligibility.invoicePresent;
             candidate.jurisdictionBucket = normalizeBucket(claim.getJurisdictionState());
             candidate.debtorTypeBucket = claim.getDebtorType() == null ? DEFAULT_BUCKET : claim.getDebtorType().name();
             candidates.add(candidate);
@@ -625,7 +629,13 @@ public class PackageService {
             }
         }
 
+        evaluation.invoicePresent = availableDocTypes.contains(INVOICE_DOC_TYPE);
+
         if (availableDocTypes.isEmpty()) {
+            return evaluation;
+        }
+
+        if (context.requireInvoiceDocument && !evaluation.invoicePresent) {
             return evaluation;
         }
 
@@ -742,6 +752,7 @@ public class PackageService {
         thresholds.put("minGrade", context.minGrade);
         thresholds.put("minBalance", context.minBalance);
         thresholds.put("requireJurisdictionKnown", context.requireJurisdictionKnown);
+        thresholds.put("requireInvoiceDocument", context.requireInvoiceDocument);
         thresholds.put("requiredDocTypes", context.requiredDocTypes);
         thresholds.put("minExtractionSuccessRate", context.minExtractionSuccessRate);
         payload.put("eligibilityThresholds", thresholds);
@@ -749,6 +760,7 @@ public class PackageService {
         payload.put("extractionSuccessRate", selected.candidate.extractionSuccessRate);
         payload.put("requiredDocTypesPresent", selected.candidate.requiredDocTypesPresent);
         payload.put("jurisdictionKnown", selected.candidate.jurisdictionKnown);
+        payload.put("invoicePresent", selected.candidate.invoicePresent);
         payload.put("faceValue", selected.candidate.faceValue);
 
         Map<String, Object> diversification = new LinkedHashMap<>();
@@ -989,6 +1001,7 @@ public class PackageService {
         private Integer minGradeRank;
         private BigDecimal minBalance;
         private boolean requireJurisdictionKnown;
+        private boolean requireInvoiceDocument;
         private Set<String> requiredDocTypes;
         private Double minExtractionSuccessRate;
         private Set<String> excludedDisputeStatuses;
@@ -1009,6 +1022,7 @@ public class PackageService {
         private double extractionSuccessRate;
         private boolean requiredDocTypesPresent;
         private boolean jurisdictionKnown;
+        private boolean invoicePresent;
         private String jurisdictionBucket;
         private String debtorTypeBucket;
     }
@@ -1019,6 +1033,7 @@ public class PackageService {
         private double extractionSuccessRate;
         private boolean requiredDocTypesPresent;
         private boolean jurisdictionKnown;
+        private boolean invoicePresent;
     }
 
     private static class SelectedCandidate {

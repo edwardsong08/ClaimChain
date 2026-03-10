@@ -99,6 +99,13 @@ public class PackagingRulesetValidator implements RulesetValidator {
             errors.add("eligibility.requireJurisdictionKnown must be boolean.");
         }
 
+        JsonNode requireInvoiceDocumentNode = eligibility.get("requireInvoiceDocument");
+        if (requireInvoiceDocumentNode != null
+                && !requireInvoiceDocumentNode.isNull()
+                && !requireInvoiceDocumentNode.isBoolean()) {
+            errors.add("eligibility.requireInvoiceDocument must be boolean.");
+        }
+
         if (!hasValidMinGrade && !hasValidMinScore) {
             errors.add("eligibility must include minGrade or minScore.");
         }

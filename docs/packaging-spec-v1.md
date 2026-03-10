@@ -143,6 +143,9 @@ See: `docs/packaging-ruleset-v1.example.json`
 - `schemaVersion` (int)
 - `eligibility` (object):
   - `minScore` (int 0..100) and/or `minGrade` (string)
+  - `minBalance` (number, >= 0)
+  - `requireJurisdictionKnown` (boolean)
+  - `requireInvoiceDocument` (boolean; when true, claim must include an `INVOICE` doc)
   - `requiredDocTypes` (array, for additional AND-style docs; MVP primary proof is enforced as `INVOICE` OR `CONTRACT` in service logic)
   - `minExtractionSuccessRate` (float 0..1)
   - `excludeDisputeStatuses` (array of strings)
