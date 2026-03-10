@@ -20,8 +20,12 @@ public class AdminService {
         this.userRepository = userRepository;
     }
 
+    public List<User> getAllUsers() {
+        return userRepository.findAllWithVerifiedByOrderByIdDesc();
+    }
+
     public List<User> getPendingUsers() {
-        return userRepository.findByVerificationStatus(VerificationStatus.PENDING);
+        return userRepository.findByVerificationStatusWithVerifiedByOrderByIdDesc(VerificationStatus.PENDING);
     }
 
     @Transactional

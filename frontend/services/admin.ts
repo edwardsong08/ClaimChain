@@ -6,7 +6,7 @@ import type {
   AdminPackageBuildResponse,
   AdminPackageDetail,
   AdminClaimStatus,
-  AdminPendingUser,
+  AdminUser,
   AdminSubmittedClaim,
 } from "@/types/admin";
 import type { Claim } from "@/types/claims";
@@ -30,7 +30,14 @@ export function listUnverifiedUsers(token: string) {
   return apiFetch("/api/admin/unverified-users", {
     method: "GET",
     headers: getAuthHeaders(token),
-  }) as Promise<AdminPendingUser[]>;
+  }) as Promise<AdminUser[]>;
+}
+
+export function listAllUsers(token: string) {
+  return apiFetch("/api/admin/users", {
+    method: "GET",
+    headers: getAuthHeaders(token),
+  }) as Promise<AdminUser[]>;
 }
 
 export function listClaimsByStatus(token: string, status: AdminClaimStatus) {
@@ -190,6 +197,22 @@ export async function verifyUser(token: string, userId: number) {
 
   if (!response.ok) {
     throw new Error(responseText || "User verification failed.");
+  }
+
+  return responseText;
+}
+
+export async function rejectUser(token: string, userId: number, reason: string) {
+  const response = await fetch(`${API_BASE}/api/admin/reject-user/${userId}`, {
+    method: "POST",
+    headers: getJsonAuthHeaders(token),
+    body: JSON.stringify({ reason }),
+  });
+
+  const responseText = await response.text();
+
+  if (!response.ok) {
+    throw new Error(responseText || "User rejection failed.");
   }
 
   return responseText;

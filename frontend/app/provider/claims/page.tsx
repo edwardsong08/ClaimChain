@@ -95,11 +95,7 @@ export default function ProviderClaimsPage() {
   }
 
   if (claimsQuery.isPending || shouldRedirectForApproval) {
-    return (
-      <main className="min-h-screen flex items-center justify-center px-6 py-10">
-        <p className="text-sm text-gray-600">Checking account approval...</p>
-      </main>
-    );
+    return <main className="min-h-screen" aria-busy="true" />;
   }
 
   if (claimsQuery.isError) {

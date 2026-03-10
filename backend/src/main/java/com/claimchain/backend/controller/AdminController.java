@@ -2,6 +2,7 @@ package com.claimchain.backend.controller;
 
 import com.claimchain.backend.dto.AnonymizedClaimViewResponseDTO;
 import com.claimchain.backend.dto.AdminClaimDecisionRequestDTO;
+import com.claimchain.backend.dto.AdminUserResponseDTO;
 import com.claimchain.backend.dto.AdminBootstrapRequestDTO;
 import com.claimchain.backend.dto.ClaimFreezeOverrideRequestDTO;
 import com.claimchain.backend.dto.ClaimScoreResponseDTO;
@@ -74,11 +75,23 @@ public class AdminController {
         return ResponseEntity.status(201).body(response);
     }
 
+    @GetMapping("/users")
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<AdminUserResponseDTO> getAllUsers() {
+        return adminService.getAllUsers()
+                .stream()
+                .map(this::toAdminUserResponse)
+                .toList();
+    }
+
     // Get all unverified users
     @GetMapping("/unverified-users")
     @PreAuthorize("hasRole('ADMIN')")
-    public List<User> getUnverifiedUsers() {
-        return adminService.getPendingUsers();
+    public List<AdminUserResponseDTO> getUnverifiedUsers() {
+        return adminService.getPendingUsers()
+                .stream()
+                .map(this::toAdminUserResponse)
+                .toList();
     }
 
     // Verify a user manually
@@ -297,6 +310,28 @@ public class AdminController {
             throw new IllegalArgumentException("Admin user not found.");
         }
         return user.getId();
+    }
+
+    private AdminUserResponseDTO toAdminUserResponse(User user) {
+        AdminUserResponseDTO dto = new AdminUserResponseDTO();
+        dto.setId(user.getId());
+        dto.setName(user.getName());
+        dto.setEmail(user.getEmail());
+        dto.setRole(user.getRole() == null ? null : user.getRole().name());
+        dto.setVerificationStatus(user.getVerificationStatus() == null ? null : user.getVerificationStatus().name());
+        dto.setPhone(user.getPhone());
+        dto.setAddress(user.getAddress());
+        dto.setEinOrLicense(user.getEinOrLicense());
+        dto.setBusinessType(user.getBusinessType());
+        dto.setBusinessName(user.getBusinessName());
+        dto.setVerifiedAt(user.getVerifiedAt());
+        dto.setRejectedAt(user.getRejectedAt());
+        dto.setRejectReason(user.getRejectReason());
+
+        User verifiedBy = user.getVerifiedBy();
+        dto.setVerifiedByUserId(verifiedBy == null ? null : verifiedBy.getId());
+        dto.setVerifiedByEmail(verifiedBy == null ? null : verifiedBy.getEmail());
+        return dto;
     }
 
     private PackageResponseDTO toPackageResponse(Package packageEntity) {

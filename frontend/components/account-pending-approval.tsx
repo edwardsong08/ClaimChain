@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 type AccountPendingApprovalProps = {
   roleLabel: string;
   roleMessage: string;
@@ -19,21 +17,6 @@ export default function AccountPendingApproval({
             access {roleMessage}.
           </p>
         </header>
-
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/"
-            className="inline-flex rounded-md border px-4 py-2 text-sm font-medium"
-          >
-            Back to Home
-          </Link>
-          <Link
-            href="/login"
-            className="inline-flex rounded-md bg-black px-4 py-2 text-sm font-medium text-white"
-          >
-            Go to Login
-          </Link>
-        </div>
       </div>
     </main>
   );

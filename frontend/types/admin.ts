@@ -1,9 +1,24 @@
-export type AdminPendingUser = {
+export type AdminUserVerificationStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export type AdminUser = {
   id: number;
+  name?: string | null;
   email?: string | null;
   role?: string | null;
-  verificationStatus?: string | null;
+  verificationStatus?: AdminUserVerificationStatus | string | null;
+  phone?: string | null;
+  address?: string | null;
+  einOrLicense?: string | null;
+  businessType?: string | null;
+  businessName?: string | null;
+  verifiedAt?: string | null;
+  verifiedByUserId?: number | null;
+  verifiedByEmail?: string | null;
+  rejectedAt?: string | null;
+  rejectReason?: string | null;
 };
+
+export type AdminPendingUser = AdminUser;
 
 export type AdminClaim = {
   id: number;

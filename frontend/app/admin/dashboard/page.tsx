@@ -250,6 +250,19 @@ export default function AdminDashboardPage() {
             </section>
 
             <section className="space-y-3 rounded-lg border p-5">
+              <h2 className="text-xl font-semibold">User Management</h2>
+              <p className="text-sm text-gray-600">
+                View all users and manage pending account verification decisions.
+              </p>
+              <Link
+                href="/admin/users"
+                className="inline-flex rounded-md border px-3 py-1.5 text-sm font-medium"
+              >
+                View All Users
+              </Link>
+            </section>
+
+            <section className="space-y-3 rounded-lg border p-5">
               <h2 className="text-xl font-semibold">Pending User Verification</h2>
 
               {pendingUsersQuery.isPending ? (

@@ -1,14 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import { getDashboardPathForRole } from "@/lib/role-routing";
 
 export default function Navbar() {
   const router = useRouter();
+  const pathname = usePathname();
   const { role, isAuthenticated, isReady, logout } = useAuthSession();
   const dashboardPath = getDashboardPathForRole(role);
+  const shouldHideDashboardLink =
+    pathname === "/provider/pending-approval" ||
+    pathname === "/buyer/pending-approval";
 
   const handleLogout = () => {
     logout();
@@ -35,7 +39,9 @@ export default function Navbar() {
             </>
           ) : (
             <>
-              {dashboardPath && <Link href={dashboardPath}>Dashboard</Link>}
+              {dashboardPath && !shouldHideDashboardLink && (
+                <Link href={dashboardPath}>Dashboard</Link>
+              )}
               <button
                 type="button"
                 onClick={handleLogout}
