@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "eligibility": {
+    "requiredClaimStatus": "APPROVED",
+    "requiredDocTypes": ["INVOICE", "CONTRACT"],
+    "minExtractionSuccessRate": 0.6,
+    "blockActiveDisputes": true
+  },
+  "weights": {
+    "enforceability": 0.35,
+    "documentation": 0.30,
+    "collectability": 0.25,
+    "operationalRisk": 0.10
+  },
+  "gradeBands": [
+    { "grade": "A", "minScore": 80 },
+    { "grade": "B", "minScore": 65 },
+    { "grade": "C", "minScore": 50 },
+    { "grade": "D", "minScore": 35 },
+    { "grade": "F", "minScore": 0 }
+  ],
+  "caps": {
+    "enforceabilityMax": 35,
+    "documentationMax": 30,
+    "collectabilityMax": 25,
+    "operationalRiskMax": 10
+  },
+  "rules": [
+    { "id": "JURISDICTION_KNOWN", "group": "enforceability", "when": { "jurisdictionKnown": true }, "points": 12, "reason": "Jurisdiction provided" },
+    { "id": "DEBT_AGE_RECENT", "group": "enforceability", "when": { "debtAgeDaysLte": 365 }, "points": 8, "reason": "Debt age favorable" },
+    { "id": "EXTRACTION_HIGH", "group": "documentation", "when": { "extractionSuccessRateGte": 0.8 }, "points": 9, "reason": "Extraction success high" },
+    { "id": "DEBTOR_BUSINESS", "group": "collectability", "when": { "debtorTypeEquals": "BUSINESS" }, "points": 7, "reason": "Business debtor" },
+    { "id": "AMOUNT_BUCKET", "group": "collectability", "when": { "currentAmountBetween": [1000, 4999] }, "points": 6, "reason": "Amount in target band" },
+    { "id": "DOC_COUNT_BASE", "group": "operationalRisk", "when": { "docCountGte": 2 }, "points": 4, "reason": "Document count manageable" }
+  ]
+}
