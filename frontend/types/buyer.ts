@@ -1,5 +1,6 @@
 export type BuyerPackageSummary = {
   id: number;
+  status?: string | null;
   totalClaims?: number | null;
   totalFaceValue?: number | null;
   price?: number | null;
@@ -22,9 +23,19 @@ export type BuyerPackageClaimSummary = {
 
 export type BuyerPackageDetail = {
   id: number;
+  status?: string | null;
   totalClaims?: number | null;
   totalFaceValue?: number | null;
   price?: number | null;
   createdAt?: string | null;
   claims?: BuyerPackageClaimSummary[] | null;
+};
+
+export type BuyerCheckoutResponse = {
+  purchaseId?: number | null;
+  checkoutSessionId?: string | null;
+  checkoutUrl?: string | null;
+  redirectUrl?: string | null;
+  sessionUrl?: string | null;
+  url?: string | null;
 };

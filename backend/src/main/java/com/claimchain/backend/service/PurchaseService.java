@@ -30,6 +30,9 @@ import java.util.Map;
 @Service
 public class PurchaseService {
 
+    private static final String EVENT_CHECKOUT_COMPLETED = "checkout.session.completed";
+    private static final String EVENT_CHECKOUT_ASYNC_SUCCEEDED = "checkout.session.async_payment_succeeded";
+
     private final PurchaseRepository purchaseRepository;
     private final PurchaseEventRepository purchaseEventRepository;
     private final PackageRepository packageRepository;
@@ -133,11 +136,12 @@ public class PurchaseService {
             return;
         }
 
-        Purchase purchase = resolvePurchaseFromPayload(verifiedEvent.getEventType(), payloadJson);
+        String eventType = verifiedEvent.getEventType();
+        Purchase purchase = resolvePurchaseFromPayload(eventType, payloadJson);
 
         PurchaseEvent purchaseEvent = new PurchaseEvent();
         purchaseEvent.setStripeEventId(verifiedEvent.getEventId());
-        purchaseEvent.setEventType(verifiedEvent.getEventType());
+        purchaseEvent.setEventType(eventType);
         purchaseEvent.setPayloadJson(payloadJson == null ? "{}" : payloadJson);
         purchaseEvent.setPurchase(purchase);
         try {
@@ -147,7 +151,11 @@ public class PurchaseService {
             return;
         }
 
-        if (!"checkout.session.completed".equals(verifiedEvent.getEventType()) || purchase == null) {
+        if (!isFulfillmentEventType(eventType) || purchase == null) {
+            return;
+        }
+
+        if (!isSuccessfulCheckoutPayment(eventType, payloadJson)) {
             return;
         }
 
@@ -297,14 +305,36 @@ public class PurchaseService {
     }
 
     private Purchase resolvePurchaseFromPayload(String eventType, String payloadJson) {
-        if (!"checkout.session.completed".equals(eventType)) {
+        if (!isFulfillmentEventType(eventType)) {
             return null;
+        }
+        Long purchaseId = extractLong(payloadJson, "data", "object", "metadata", "purchaseId");
+        if (purchaseId != null) {
+            Purchase purchase = purchaseRepository.findById(purchaseId).orElse(null);
+            if (purchase != null) {
+                return purchase;
+            }
         }
         String sessionId = extractText(payloadJson, "data", "object", "id");
         if (sessionId == null || sessionId.isBlank()) {
             return null;
         }
         return purchaseRepository.findByStripeCheckoutSessionId(sessionId).orElse(null);
+    }
+
+    private boolean isFulfillmentEventType(String eventType) {
+        return EVENT_CHECKOUT_COMPLETED.equals(eventType) || EVENT_CHECKOUT_ASYNC_SUCCEEDED.equals(eventType);
+    }
+
+    private boolean isSuccessfulCheckoutPayment(String eventType, String payloadJson) {
+        if (EVENT_CHECKOUT_ASYNC_SUCCEEDED.equals(eventType)) {
+            return true;
+        }
+        if (!EVENT_CHECKOUT_COMPLETED.equals(eventType)) {
+            return false;
+        }
+        String paymentStatus = extractText(payloadJson, "data", "object", "payment_status");
+        return paymentStatus == null || "paid".equalsIgnoreCase(paymentStatus);
     }
 
     private String extractText(String payloadJson, String... path) {
@@ -322,6 +352,18 @@ public class PurchaseService {
             String value = node.asText(null);
             return value == null || value.isBlank() ? null : value;
         } catch (JsonProcessingException ex) {
+            return null;
+        }
+    }
+
+    private Long extractLong(String payloadJson, String... path) {
+        String value = extractText(payloadJson, path);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException ex) {
             return null;
         }
     }

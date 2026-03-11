@@ -29,10 +29,11 @@ public class StripeClientService {
             String cancelUrl
     ) throws StripeException {
         applyApiKey();
+        String resolvedSuccessUrl = ensureSessionIdPlaceholder(successUrl);
 
         SessionCreateParams params = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
-                .setSuccessUrl(successUrl)
+                .setSuccessUrl(resolvedSuccessUrl)
                 .setCancelUrl(cancelUrl)
                 .addLineItem(
                         SessionCreateParams.LineItem.builder()
@@ -63,6 +64,13 @@ public class StripeClientService {
         applyApiKey();
         Session session = Session.retrieve(checkoutSessionId);
         return session.getUrl();
+    }
+
+    private String ensureSessionIdPlaceholder(String successUrl) {
+        if (successUrl.contains("{CHECKOUT_SESSION_ID}")) {
+            return successUrl;
+        }
+        return successUrl + (successUrl.contains("?") ? "&" : "?") + "session_id={CHECKOUT_SESSION_ID}";
     }
 
     private void applyApiKey() {

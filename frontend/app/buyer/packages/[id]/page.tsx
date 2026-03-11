@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import { isApprovalGateForbiddenError } from "@/lib/api-error-utils";
-import { getBuyerPackageDetail } from "@/services/buyer";
-import type { BuyerPackageClaimSummary } from "@/types/buyer";
+import { checkoutBuyerPackage, getBuyerPackageDetail } from "@/services/buyer";
+import type { BuyerCheckoutResponse, BuyerPackageClaimSummary } from "@/types/buyer";
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -71,6 +71,26 @@ function formatStatus(value: string | null | undefined) {
   return value.replaceAll("_", " ");
 }
 
+function hasText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function normalizeStatus(value: string | null | undefined) {
+  if (!hasText(value)) return "LISTED";
+  return value.trim().toUpperCase();
+}
+
+function resolveCheckoutUrl(response: BuyerCheckoutResponse) {
+  const candidates = [
+    response.checkoutUrl,
+    response.redirectUrl,
+    response.sessionUrl,
+    response.url,
+  ];
+  const resolved = candidates.find((candidate) => hasText(candidate));
+  return resolved ?? null;
+}
+
 function claimKey(claim: BuyerPackageClaimSummary, index: number) {
   if (typeof claim.claimId === "number") return String(claim.claimId);
   return `${index}-${claim.claimType ?? "claim"}`;
@@ -96,6 +116,24 @@ export default function BuyerPackageDetailPage() {
       return getBuyerPackageDetail(packageId, token);
     },
     enabled: isReady && isAuthenticated && Boolean(token) && Boolean(packageId),
+  });
+  const checkoutMutation = useMutation({
+    mutationFn: () => {
+      if (!token) {
+        throw new Error("You must be logged in as buyer.");
+      }
+      if (!packageId) {
+        throw new Error("Missing package id.");
+      }
+      return checkoutBuyerPackage(packageId, token);
+    },
+    onSuccess: (response) => {
+      const checkoutUrl = resolveCheckoutUrl(response);
+      if (!checkoutUrl) {
+        throw new Error("Checkout redirect URL was not returned.");
+      }
+      window.location.href = checkoutUrl;
+    },
   });
 
   const shouldRedirectForApproval =
@@ -156,6 +194,18 @@ export default function BuyerPackageDetailPage() {
     );
   }
 
+  const normalizedPackageStatus = normalizeStatus(packageDetailQuery.data.status);
+  const hasPrice = typeof packageDetailQuery.data.price === "number";
+  const isPurchasable = hasPrice && normalizedPackageStatus === "LISTED";
+  const purchaseUnavailableMessage = !hasPrice
+    ? "Package is not yet priced."
+    : normalizedPackageStatus !== "LISTED"
+      ? "Package is not currently available for purchase."
+      : null;
+  const purchaseErrorMessage = checkoutMutation.isError
+    ? getErrorMessage(checkoutMutation.error, "Unable to start checkout.")
+    : null;
+
   return (
     <main className="min-h-screen px-6 py-10">
       <div className="mx-auto w-full max-w-5xl space-y-6">
@@ -177,7 +227,7 @@ export default function BuyerPackageDetailPage() {
             <h2 className="text-xl font-semibold">Summary</h2>
             <div className="grid gap-2 text-sm">
               <p>Package ID: {packageDetailQuery.data.id}</p>
-              <p>Status: LISTED</p>
+              <p>Status: {formatStatus(packageDetailQuery.data.status ?? "LISTED")}</p>
               <p>Total Claims: {packageDetailQuery.data.totalClaims ?? 0}</p>
               <p>
                 Total Face Value: {formatCurrency(packageDetailQuery.data.totalFaceValue)}
@@ -218,9 +268,25 @@ export default function BuyerPackageDetailPage() {
           </section>
 
           <section className="rounded-lg border p-5">
-            <p className="text-sm text-gray-600">
-              Checkout flow will be added next.
+            <h2 className="text-xl font-semibold">Purchase</h2>
+            <p className="mt-2 text-sm text-gray-600">
+              You will be redirected to Stripe checkout to complete payment.
             </p>
+            {isPurchasable ? (
+              <button
+                type="button"
+                onClick={() => checkoutMutation.mutate()}
+                disabled={checkoutMutation.isPending}
+                className="mt-3 rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {checkoutMutation.isPending ? "Redirecting..." : "Purchase Package"}
+              </button>
+            ) : (
+              <p className="mt-3 text-sm text-gray-600">{purchaseUnavailableMessage}</p>
+            )}
+            {purchaseErrorMessage && (
+              <p className="mt-2 text-sm text-red-600">{purchaseErrorMessage}</p>
+            )}
           </section>
         </>
       </div>

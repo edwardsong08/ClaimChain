@@ -39,6 +39,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -212,6 +213,7 @@ class PurchaseFlowIntegrationTest {
                   "data": {
                     "object": {
                       "id": "cs_webhook_complete",
+                      "payment_status": "paid",
                       "payment_intent": "pi_complete_1"
                     }
                   }
@@ -234,12 +236,118 @@ class PurchaseFlowIntegrationTest {
         Package updatedPackage = packageRepository.findById(listedPackage.getId()).orElseThrow();
         assertThat(updatedPackage.getStatus()).isEqualTo(PackageStatus.SOLD);
 
+        mockMvc.perform(
+                        get("/api/buyer/packages/{id}/export", listedPackage.getId())
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + buyerToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
+
+        mockMvc.perform(
+                        get("/api/buyer/packages/{id}", listedPackage.getId())
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + buyerToken)
+                )
+                .andExpect(status().isNotFound());
+
         Integer purchaseEventCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM purchase_events WHERE stripe_event_id = ?",
                 Integer.class,
                 "evt_complete_1"
         );
         assertThat(purchaseEventCount).isEqualTo(1);
+        assertAuditCount("PURCHASE_PAID", "PURCHASE", purchase.getId(), 1);
+        assertAuditCount("ENTITLEMENT_GRANTED", "PACKAGE", listedPackage.getId(), 1);
+        assertAuditCount("PACKAGE_SOLD", "PACKAGE", listedPackage.getId(), 1);
+    }
+
+    @Test
+    void webhookCompletedWithoutPaidStatusDoesNotGrantEntitlement() throws Exception {
+        Package listedPackage = createPackage(adminUser, PackageStatus.LISTED, 120_000L, "usd");
+        Purchase purchase = createPendingPurchase(listedPackage, buyerUser, "cs_webhook_unpaid");
+
+        when(stripeWebhookVerifier.verifyAndConstructEvent(anyString(), anyString()))
+                .thenReturn(new StripeWebhookVerifier.VerifiedStripeEvent("evt_unpaid_1", "checkout.session.completed"));
+
+        String payload = """
+                {
+                  "id": "evt_payload_unpaid_1",
+                  "type": "checkout.session.completed",
+                  "data": {
+                    "object": {
+                      "id": "cs_webhook_unpaid",
+                      "payment_status": "unpaid",
+                      "payment_intent": "pi_unpaid_1"
+                    }
+                  }
+                }
+                """;
+
+        mockMvc.perform(
+                        post("/api/webhooks/stripe")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .header("Stripe-Signature", "t=1,v1=test-signature")
+                                .content(payload)
+                )
+                .andExpect(status().isOk());
+
+        Purchase savedPurchase = purchaseRepository.findById(purchase.getId()).orElseThrow();
+        assertThat(savedPurchase.getStatus()).isEqualTo(PurchaseStatus.PENDING);
+        assertThat(savedPurchase.getStripePaymentIntentId()).isNull();
+        assertThat(buyerEntitlementRepository.existsByPackageEntityIdAndBuyerUserId(listedPackage.getId(), buyerUser.getId())).isFalse();
+
+        Package updatedPackage = packageRepository.findById(listedPackage.getId()).orElseThrow();
+        assertThat(updatedPackage.getStatus()).isEqualTo(PackageStatus.LISTED);
+
+        Integer purchaseEventCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM purchase_events WHERE stripe_event_id = ?",
+                Integer.class,
+                "evt_unpaid_1"
+        );
+        assertThat(purchaseEventCount).isEqualTo(1);
+        assertAuditCount("PURCHASE_PAID", "PURCHASE", purchase.getId(), 0);
+        assertAuditCount("ENTITLEMENT_GRANTED", "PACKAGE", listedPackage.getId(), 0);
+        assertAuditCount("PACKAGE_SOLD", "PACKAGE", listedPackage.getId(), 0);
+    }
+
+    @Test
+    void webhookAsyncSuccessUsesMetadataPurchaseIdToFulfill() throws Exception {
+        Package listedPackage = createPackage(adminUser, PackageStatus.LISTED, 91_000L, "usd");
+        Purchase purchase = createPendingPurchase(listedPackage, buyerUser, "cs_webhook_async_initial");
+
+        when(stripeWebhookVerifier.verifyAndConstructEvent(anyString(), anyString()))
+                .thenReturn(new StripeWebhookVerifier.VerifiedStripeEvent("evt_async_1", "checkout.session.async_payment_succeeded"));
+
+        String payload = """
+                {
+                  "id": "evt_payload_async_1",
+                  "type": "checkout.session.async_payment_succeeded",
+                  "data": {
+                    "object": {
+                      "id": "cs_webhook_async_different",
+                      "payment_intent": "pi_async_1",
+                      "metadata": {
+                        "purchaseId": "%d"
+                      }
+                    }
+                  }
+                }
+                """.formatted(purchase.getId());
+
+        mockMvc.perform(
+                        post("/api/webhooks/stripe")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .header("Stripe-Signature", "t=1,v1=test-signature")
+                                .content(payload)
+                )
+                .andExpect(status().isOk());
+
+        Purchase savedPurchase = purchaseRepository.findById(purchase.getId()).orElseThrow();
+        assertThat(savedPurchase.getStatus()).isEqualTo(PurchaseStatus.PAID);
+        assertThat(savedPurchase.getStripePaymentIntentId()).isEqualTo("pi_async_1");
+        assertThat(buyerEntitlementRepository.existsByPackageEntityIdAndBuyerUserId(listedPackage.getId(), buyerUser.getId())).isTrue();
+
+        Package updatedPackage = packageRepository.findById(listedPackage.getId()).orElseThrow();
+        assertThat(updatedPackage.getStatus()).isEqualTo(PackageStatus.SOLD);
         assertAuditCount("PURCHASE_PAID", "PURCHASE", purchase.getId(), 1);
         assertAuditCount("ENTITLEMENT_GRANTED", "PACKAGE", listedPackage.getId(), 1);
         assertAuditCount("PACKAGE_SOLD", "PACKAGE", listedPackage.getId(), 1);

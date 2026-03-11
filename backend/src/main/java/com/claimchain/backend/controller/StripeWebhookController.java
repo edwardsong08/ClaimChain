@@ -44,7 +44,8 @@ public class StripeWebhookController {
         try {
             purchaseService.processVerifiedWebhookEvent(verifiedEvent, payload);
         } catch (Exception ex) {
-            log.warn("Stripe webhook processing failed for eventId={}", verifiedEvent.getEventId());
+            log.warn("Stripe webhook processing failed for eventId={}", verifiedEvent.getEventId(), ex);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
 
         return ResponseEntity.ok().build();
