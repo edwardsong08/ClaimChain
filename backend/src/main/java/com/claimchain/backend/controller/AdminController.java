@@ -11,6 +11,7 @@ import com.claimchain.backend.dto.PackageBuildRequestDTO;
 import com.claimchain.backend.dto.PackageBuildResponseDTO;
 import com.claimchain.backend.dto.PackageCreateRequestDTO;
 import com.claimchain.backend.dto.PackageDetailResponseDTO;
+import com.claimchain.backend.dto.PackagePriceUpdateRequestDTO;
 import com.claimchain.backend.dto.PackageResponseDTO;
 import com.claimchain.backend.dto.RejectUserRequestDTO;
 import com.claimchain.backend.model.AnonymizedClaimView;
@@ -33,6 +34,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -235,6 +237,18 @@ public class AdminController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/packages/{id}/price")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<PackageResponseDTO> setPackagePrice(
+            @PathVariable Long id,
+            @Valid @RequestBody PackagePriceUpdateRequestDTO request,
+            Principal principal
+    ) {
+        Long adminUserId = requirePrincipalUserId(principal);
+        Package updated = packageService.setPackagePrice(id, request.getPrice(), adminUserId);
+        return ResponseEntity.ok(toPackageResponse(updated));
+    }
+
     @PostMapping("/packages/{id}/list")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> listPackage(
@@ -340,6 +354,7 @@ public class AdminController {
         dto.setStatus(packageEntity.getStatus() == null ? null : packageEntity.getStatus().name());
         dto.setTotalClaims(packageEntity.getTotalClaims());
         dto.setTotalFaceValue(packageEntity.getTotalFaceValue());
+        dto.setPrice(toPrice(packageEntity.getPriceCents()));
         dto.setCreatedAt(packageEntity.getCreatedAt());
         return dto;
     }
@@ -350,6 +365,7 @@ public class AdminController {
         dto.setStatus(packageEntity.getStatus() == null ? null : packageEntity.getStatus().name());
         dto.setTotalClaims(packageEntity.getTotalClaims());
         dto.setTotalFaceValue(packageEntity.getTotalFaceValue());
+        dto.setPrice(toPrice(packageEntity.getPriceCents()));
         dto.setNotes(packageEntity.getNotes());
         dto.setCreatedAt(packageEntity.getCreatedAt());
         dto.setCreatedByUserId(packageEntity.getCreatedByUser() == null ? null : packageEntity.getCreatedByUser().getId());
@@ -399,6 +415,13 @@ public class AdminController {
         dto.setExtractionSuccessRate(view.getExtractionSuccessRate());
         dto.setDocTypesPresent(view.getDocTypesPresent());
         return dto;
+    }
+
+    private BigDecimal toPrice(Long priceCents) {
+        if (priceCents == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(priceCents, 2);
     }
 
 }

@@ -31,6 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -174,6 +175,87 @@ public class PackageService {
             return packageRepository.findAllByOrderByCreatedAtDesc();
         }
         return packageRepository.findByStatusOrderByCreatedAtDesc(status);
+    }
+
+    @Transactional
+    public Package setPackagePrice(Long packageId, BigDecimal price, Long adminUserId) {
+        User admin = requireAdminById(adminUserId);
+        if (packageId == null) {
+            throw new PackageValidationException("PACKAGE_ID_REQUIRED", "Package id is required.");
+        }
+        if (price == null) {
+            throw new PackageValidationException("PACKAGE_PRICE_REQUIRED", "Package price is required.");
+        }
+        if (price.compareTo(BigDecimal.ZERO) < 0) {
+            throw new PackageValidationException("PACKAGE_PRICE_INVALID", "Package price must be greater than or equal to 0.");
+        }
+
+        long nextPriceCents;
+        try {
+            nextPriceCents = price.setScale(2, RoundingMode.UNNECESSARY)
+                    .movePointRight(2)
+                    .longValueExact();
+        } catch (ArithmeticException ex) {
+            throw new PackageValidationException("PACKAGE_PRICE_INVALID", "Package price must have at most 2 decimal places.");
+        }
+
+        Package packageEntity = packageRepository.findById(packageId)
+                .orElseThrow(() -> new PackageNotFoundException("Package not found."));
+        ensurePackageStatusCanBePriced(packageEntity);
+        Long previousPriceCents = packageEntity.getPriceCents();
+        packageEntity.setPriceCents(nextPriceCents);
+        Package updated = packageRepository.save(packageEntity);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("packageId", updated.getId());
+        metadata.put("previousPriceCents", previousPriceCents);
+        metadata.put("updatedPriceCents", nextPriceCents);
+
+        auditService.record(
+                admin.getId(),
+                admin.getRole() == null ? null : admin.getRole().name(),
+                "PACKAGE_PRICE_UPDATED",
+                "PACKAGE",
+                updated.getId(),
+                toJson(metadata)
+        );
+        return updated;
+    }
+
+    private void ensurePackageStatusCanBePriced(Package packageEntity) {
+        PackageStatus status = packageEntity.getStatus();
+        if (status == PackageStatus.READY) {
+            return;
+        }
+        if (status == PackageStatus.LISTED) {
+            throw new PackageConflictException(
+                    "PACKAGE_STATUS_INVALID",
+                    "Package price cannot be updated while package is LISTED.",
+                    List.of(
+                            "currentStatus=LISTED",
+                            "requiredStatus=READY",
+                            "hint=Unlist package before repricing."
+                    )
+            );
+        }
+        if (status == PackageStatus.SOLD) {
+            throw new PackageConflictException(
+                    "PACKAGE_STATUS_INVALID",
+                    "Package price cannot be updated after package is SOLD.",
+                    List.of(
+                            "currentStatus=SOLD",
+                            "requiredStatus=READY"
+                    )
+            );
+        }
+        throw new PackageConflictException(
+                "PACKAGE_STATUS_INVALID",
+                "Package price can only be updated when package status is READY.",
+                List.of(
+                        "currentStatus=" + (status == null ? "UNKNOWN" : status.name()),
+                        "requiredStatus=READY"
+                )
+        );
     }
 
     @Transactional

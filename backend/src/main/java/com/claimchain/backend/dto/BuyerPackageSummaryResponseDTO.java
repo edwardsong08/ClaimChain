@@ -8,6 +8,7 @@ public class BuyerPackageSummaryResponseDTO {
     private Long id;
     private Integer totalClaims;
     private BigDecimal totalFaceValue;
+    private BigDecimal price;
     private Instant createdAt;
 
     public Long getId() {
@@ -32,6 +33,14 @@ public class BuyerPackageSummaryResponseDTO {
 
     public void setTotalFaceValue(BigDecimal totalFaceValue) {
         this.totalFaceValue = totalFaceValue;
+    }
+
+    public BigDecimal getPrice() {
+        return price;
+    }
+
+    public void setPrice(BigDecimal price) {
+        this.price = price;
     }
 
     public Instant getCreatedAt() {

@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.security.Principal;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -135,6 +136,7 @@ public class BuyerController {
         dto.setId(packageEntity.getId());
         dto.setTotalClaims(packageEntity.getTotalClaims());
         dto.setTotalFaceValue(packageEntity.getTotalFaceValue());
+        dto.setPrice(toPrice(packageEntity.getPriceCents()));
         dto.setCreatedAt(packageEntity.getCreatedAt());
         return dto;
     }
@@ -149,6 +151,7 @@ public class BuyerController {
         dto.setId(packageEntity.getId());
         dto.setTotalClaims(packageEntity.getTotalClaims());
         dto.setTotalFaceValue(packageEntity.getTotalFaceValue());
+        dto.setPrice(toPrice(packageEntity.getPriceCents()));
         dto.setCreatedAt(packageEntity.getCreatedAt());
         dto.setClaims(claims);
         return dto;
@@ -184,5 +187,12 @@ public class BuyerController {
     private void requireApprovedBuyerAccess(Principal principal) {
         String email = principal == null ? null : principal.getName();
         authorizationService.requireApprovedCollectionAgency(email);
+    }
+
+    private BigDecimal toPrice(Long priceCents) {
+        if (priceCents == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(priceCents, 2);
     }
 }

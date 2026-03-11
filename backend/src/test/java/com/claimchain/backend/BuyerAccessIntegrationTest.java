@@ -158,6 +158,17 @@ class BuyerAccessIntegrationTest {
         listedPackageId = firstBuild.packageId;
 
         mockMvc.perform(
+                        post("/api/admin/packages/{id}/price", listedPackageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"price\":149.95}")
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(listedPackageId))
+                .andExpect(jsonPath("$.price").value(149.95));
+
+        mockMvc.perform(
                         post("/api/admin/packages/{id}/anonymized-views/generate", listedPackageId)
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
                 )
@@ -194,6 +205,15 @@ class BuyerAccessIntegrationTest {
         listBody.forEach(node -> returnedPackageIds.add(node.get("id").asLong()));
         assertThat(returnedPackageIds).contains(listedPackageId);
         assertThat(returnedPackageIds).doesNotContain(readyPackageId);
+        JsonNode listedSummary = null;
+        for (JsonNode node : listBody) {
+            if (node.get("id").asLong() == listedPackageId) {
+                listedSummary = node;
+                break;
+            }
+        }
+        assertThat(listedSummary).isNotNull();
+        assertThat(listedSummary.get("price").decimalValue()).isEqualByComparingTo("149.95");
 
         MvcResult detailResult = mockMvc.perform(
                         get("/api/buyer/packages/{id}", listedPackageId)
@@ -203,6 +223,7 @@ class BuyerAccessIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id").value(listedPackageId))
                 .andExpect(jsonPath("$.totalClaims").value(1))
+                .andExpect(jsonPath("$.price").value(149.95))
                 .andExpect(jsonPath("$.claims").isArray())
                 .andExpect(jsonPath("$.claims[0].claimId").value(listedClaimId))
                 .andExpect(jsonPath("$.claims[0].jurisdictionState").value("NY"))

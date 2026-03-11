@@ -4,6 +4,7 @@ import com.claimchain.backend.dto.ApiErrorResponse;
 import com.claimchain.backend.model.Claim;
 import com.claimchain.backend.model.ClaimStatus;
 import com.claimchain.backend.model.Package;
+import com.claimchain.backend.model.PackageStatus;
 import com.claimchain.backend.model.Role;
 import com.claimchain.backend.model.User;
 import com.claimchain.backend.model.VerificationStatus;
@@ -105,7 +106,8 @@ class PackageAdminIntegrationTest {
                 .andExpect(jsonPath("$.id").isNumber())
                 .andExpect(jsonPath("$.status").value("DRAFT"))
                 .andExpect(jsonPath("$.totalClaims").value(0))
-                .andExpect(jsonPath("$.totalFaceValue").value(0));
+                .andExpect(jsonPath("$.totalFaceValue").value(0))
+                .andExpect(jsonPath("$.price").isEmpty());
     }
 
     @Test
@@ -181,6 +183,153 @@ class PackageAdminIntegrationTest {
         assertApiError(addForbidden, "FORBIDDEN");
     }
 
+    @Test
+    void adminCanSetPackagePrice_forReadyPackage_andAdminListDetailIncludeUpdatedPrice() throws Exception {
+        Long packageId = createPackageWithStatus(PackageStatus.READY);
+
+        mockMvc.perform(
+                        post("/api/admin/packages/{id}/price", packageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "price": 199.99
+                                        }
+                                        """)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(packageId))
+                .andExpect(jsonPath("$.price").value(199.99));
+
+        Package savedPackage = packageRepository.findById(packageId).orElseThrow();
+        assertThat(savedPackage.getPriceCents()).isEqualTo(19999L);
+
+        mockMvc.perform(
+                        get("/api/admin/packages/{id}", packageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(packageId))
+                .andExpect(jsonPath("$.price").value(199.99));
+
+        mockMvc.perform(
+                        get("/api/admin/packages")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].id").value(packageId))
+                .andExpect(jsonPath("$[0].price").value(199.99));
+    }
+
+    @Test
+    void adminCanSetPackagePrice_forUnlistedPackage() throws Exception {
+        Long packageId = createPackageWithStatus(PackageStatus.READY);
+
+        mockMvc.perform(
+                        post("/api/admin/packages/{id}/list", packageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(
+                        post("/api/admin/packages/{id}/unlist", packageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(
+                        post("/api/admin/packages/{id}/price", packageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"price\":151.25}")
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(packageId))
+                .andExpect(jsonPath("$.price").value(151.25));
+    }
+
+    @Test
+    void pricingListedPackageIsRejected() throws Exception {
+        Long packageId = createPackageWithStatus(PackageStatus.READY);
+        mockMvc.perform(
+                        post("/api/admin/packages/{id}/list", packageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isNoContent());
+
+        MvcResult conflict = mockMvc.perform(
+                        post("/api/admin/packages/{id}/price", packageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"price\":88.00}")
+                )
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+
+        ApiErrorResponse error = readApiError(conflict);
+        assertThat(error.getCode()).isEqualTo("PACKAGE_STATUS_INVALID");
+        assertThat(error.getDetails()).contains("currentStatus=LISTED");
+        assertThat(error.getDetails()).contains("hint=Unlist package before repricing.");
+    }
+
+    @Test
+    void pricingSoldPackageIsRejected() throws Exception {
+        Long packageId = createPackageWithStatus(PackageStatus.SOLD);
+
+        MvcResult conflict = mockMvc.perform(
+                        post("/api/admin/packages/{id}/price", packageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"price\":88.00}")
+                )
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+
+        ApiErrorResponse error = readApiError(conflict);
+        assertThat(error.getCode()).isEqualTo("PACKAGE_STATUS_INVALID");
+        assertThat(error.getDetails()).contains("currentStatus=SOLD");
+    }
+
+    @Test
+    void nonAdminCannotSetPackagePrice() throws Exception {
+        Long packageId = createPackageWithStatus(PackageStatus.READY);
+
+        MvcResult forbidden = mockMvc.perform(
+                        post("/api/admin/packages/{id}/price", packageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + providerToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"price\":10.00}")
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+
+        assertApiError(forbidden, "FORBIDDEN");
+    }
+
+    @Test
+    void negativePackagePriceIsRejected() throws Exception {
+        Long packageId = createPackageWithStatus(PackageStatus.READY);
+
+        MvcResult invalid = mockMvc.perform(
+                        post("/api/admin/packages/{id}/price", packageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"price\":-0.01}")
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andReturn();
+
+        assertApiError(invalid, "VALIDATION_ERROR");
+    }
+
     private Long createDraftPackage(String notes) throws Exception {
         MvcResult result = mockMvc.perform(
                         post("/api/admin/packages")
@@ -195,6 +344,19 @@ class PackageAdminIntegrationTest {
 
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
         return body.get("id").asLong();
+    }
+
+    private Long createPackageWithStatus(PackageStatus status) {
+        User admin = userRepository.findByEmail(ADMIN_EMAIL);
+        assertThat(admin).isNotNull();
+
+        Package packageEntity = new Package();
+        packageEntity.setCreatedByUser(admin);
+        packageEntity.setStatus(status);
+        packageEntity.setNotes("status-" + status.name().toLowerCase());
+        packageEntity.setTotalClaims(0);
+        packageEntity.setTotalFaceValue(BigDecimal.ZERO);
+        return packageRepository.saveAndFlush(packageEntity).getId();
     }
 
     private Claim createApprovedClaim(User owner, BigDecimal amountOwed, BigDecimal currentAmount) {
@@ -243,9 +405,13 @@ class PackageAdminIntegrationTest {
     }
 
     private void assertApiError(MvcResult result, String expectedCode) throws Exception {
-        ApiErrorResponse error = objectMapper.readValue(result.getResponse().getContentAsString(), ApiErrorResponse.class);
+        ApiErrorResponse error = readApiError(result);
         assertThat(error.getCode()).isEqualTo(expectedCode);
         assertThat(error.getRequestId()).isNotBlank();
+    }
+
+    private ApiErrorResponse readApiError(MvcResult result) throws Exception {
+        return objectMapper.readValue(result.getResponse().getContentAsString(), ApiErrorResponse.class);
     }
 
     private void cleanupTestData() {

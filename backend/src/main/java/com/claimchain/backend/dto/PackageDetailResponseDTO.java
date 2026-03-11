@@ -10,6 +10,7 @@ public class PackageDetailResponseDTO {
     private String status;
     private Integer totalClaims;
     private BigDecimal totalFaceValue;
+    private BigDecimal price;
     private String notes;
     private Instant createdAt;
     private Long createdByUserId;
@@ -47,6 +48,14 @@ public class PackageDetailResponseDTO {
 
     public void setTotalFaceValue(BigDecimal totalFaceValue) {
         this.totalFaceValue = totalFaceValue;
+    }
+
+    public BigDecimal getPrice() {
+        return price;
+    }
+
+    public void setPrice(BigDecimal price) {
+        this.price = price;
     }
 
     public String getNotes() {
