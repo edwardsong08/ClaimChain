@@ -1,6 +1,7 @@
 import { apiFetch } from "./api";
 import type {
   AdminClaim,
+  AdminAnonymizedClaimView,
   AdminClaimDecisionRequest,
   AdminPackage,
   AdminPackageBuildResponse,
@@ -124,6 +125,31 @@ export async function unlistPackage(packageId: number | string, token: string) {
   const responseText = await response.text();
   if (!response.ok) {
     throw new Error(responseText || "Unable to unlist package.");
+  }
+}
+
+export function listPackageAnonymizedViews(token: string, packageId: number | string) {
+  return apiFetch(`/api/admin/packages/${packageId}/anonymized-views`, {
+    method: "GET",
+    headers: getAuthHeaders(token),
+  }) as Promise<AdminAnonymizedClaimView[]>;
+}
+
+export async function generatePackageAnonymizedViews(
+  token: string,
+  packageId: number | string
+) {
+  const response = await fetch(
+    `${API_BASE}/api/admin/packages/${packageId}/anonymized-views/generate`,
+    {
+      method: "POST",
+      headers: getAuthHeaders(token),
+    }
+  );
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(responseText || "Unable to generate anonymized views.");
   }
 }
 

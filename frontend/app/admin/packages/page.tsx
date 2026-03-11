@@ -7,17 +7,26 @@ import { toast } from "sonner";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import {
   createPackage,
+  getAdminPackageDetail,
   listAdminPackages,
+  listClaimsByStatus,
   listPackage,
   previewPackageBuild,
   unlistPackage,
 } from "@/services/admin";
-import type { AdminPackage } from "@/types/admin";
+import type { AdminClaimStatus, AdminPackage } from "@/types/admin";
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 });
+
+const claimStatuses: AdminClaimStatus[] = [
+  "SUBMITTED",
+  "UNDER_REVIEW",
+  "APPROVED",
+  "REJECTED",
+];
 
 function formatStatus(status: string | null | undefined) {
   if (!status) return "N/A";
@@ -113,6 +122,69 @@ export default function AdminPackagesPage() {
     enabled: isReady && isAuthenticated && Boolean(token),
   });
 
+  const packageIdsKey = Array.isArray(packagesQuery.data)
+    ? packagesQuery.data.map((packageItem) => packageItem.id).join(",")
+    : "";
+
+  const packagedClaimsQuery = useQuery({
+    queryKey: ["admin-packaged-claims", token, packageIdsKey],
+    queryFn: async () => {
+      if (!token) {
+        throw new Error("You must be logged in as admin.");
+      }
+      const packages = packagesQuery.data ?? [];
+      if (packages.length === 0) {
+        return [] as Array<{
+          claimId: number;
+          packageId: number;
+          amount?: number | null;
+          scoreTotal?: number | null;
+          grade?: string | null;
+        }>;
+      }
+
+      const [packageDetails, claimGroups] = await Promise.all([
+        Promise.all(
+          packages.map((packageItem) => getAdminPackageDetail(token, packageItem.id))
+        ),
+        Promise.all(claimStatuses.map((status) => listClaimsByStatus(token, status))),
+      ]);
+
+      const claimIndex = new Map(
+        claimGroups
+          .flat()
+          .filter((claim) => typeof claim.id === "number")
+          .map((claim) => [claim.id, claim])
+      );
+
+      return packageDetails.flatMap((packageDetail) => {
+        const claimIds = Array.isArray(packageDetail.claimIds)
+          ? packageDetail.claimIds.filter(
+              (claimId): claimId is number => typeof claimId === "number"
+            )
+          : [];
+
+        return claimIds.map((claimId) => {
+          const claim = claimIndex.get(claimId);
+          return {
+            claimId,
+            packageId: packageDetail.id,
+            amount: claim?.currentAmount ?? claim?.amount ?? null,
+            scoreTotal: claim?.scoreTotal ?? null,
+            grade: claim?.grade ?? null,
+          };
+        });
+      });
+    },
+    enabled:
+      isReady &&
+      isAuthenticated &&
+      Boolean(token) &&
+      packagesQuery.isSuccess &&
+      Array.isArray(packagesQuery.data) &&
+      packagesQuery.data.length > 0,
+  });
+
   const previewMutation = useMutation({
     mutationFn: () => {
       if (!token) {
@@ -139,8 +211,12 @@ export default function AdminPackagesPage() {
     },
     onSuccess: async (result) => {
       toast.success(`Package created${result.packageId ? ` (#${result.packageId})` : ""}.`);
+      previewMutation.reset();
       await queryClient.invalidateQueries({
         queryKey: ["admin-packages", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-packaged-claims", token],
       });
     },
     onError: (error) => {
@@ -160,6 +236,9 @@ export default function AdminPackagesPage() {
       await queryClient.invalidateQueries({
         queryKey: ["admin-packages", token],
       });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-packaged-claims", token],
+      });
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, "Unable to list package."));
@@ -177,6 +256,9 @@ export default function AdminPackagesPage() {
       toast.success("Package unlisted.");
       await queryClient.invalidateQueries({
         queryKey: ["admin-packages", token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-packaged-claims", token],
       });
     },
     onError: (error) => {
@@ -359,6 +441,13 @@ export default function AdminPackagesPage() {
                           </div>
 
                           <div className="flex flex-wrap gap-2">
+                            <Link
+                              href={`/admin/packages/${packageItem.id}`}
+                              className="inline-flex rounded-md border px-3 py-1.5 text-sm font-medium"
+                            >
+                              View Package
+                            </Link>
+
                             {canList && (
                               <button
                                 type="button"
@@ -413,6 +502,55 @@ export default function AdminPackagesPage() {
                       </li>
                     );
                   })}
+                </ul>
+              )}
+            </section>
+
+            <section className="space-y-3 rounded-lg border p-5">
+              <h2 className="text-xl font-semibold">Packaged Claims</h2>
+
+              {packagesQuery.isPending || packagedClaimsQuery.isPending ? (
+                <p className="text-sm text-gray-600">Loading packaged claims...</p>
+              ) : packagesQuery.isError ? (
+                <p className="text-sm text-red-600">
+                  {getErrorMessage(
+                    packagesQuery.error,
+                    "Unable to load packages for packaged claims."
+                  )}
+                </p>
+              ) : packagedClaimsQuery.isError ? (
+                <p className="text-sm text-red-600">
+                  {getErrorMessage(
+                    packagedClaimsQuery.error,
+                    "Unable to load packaged claims."
+                  )}
+                </p>
+              ) : !packagedClaimsQuery.data || packagedClaimsQuery.data.length === 0 ? (
+                <p className="text-sm text-gray-600">
+                  No claims are currently included in packages.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {packagedClaimsQuery.data.map((entry) => (
+                    <li
+                      key={`${entry.packageId}-${entry.claimId}`}
+                      className="rounded-md border p-3 text-sm"
+                    >
+                      <div className="grid gap-1 sm:grid-cols-2">
+                        <p>Claim ID: {entry.claimId}</p>
+                        <p>Package ID: {entry.packageId}</p>
+                        {typeof entry.amount === "number" && (
+                          <p>Amount: {formatCurrency(entry.amount)}</p>
+                        )}
+                        {typeof entry.scoreTotal === "number" && (
+                          <p>Score: {entry.scoreTotal}</p>
+                        )}
+                        {textValue(entry.grade, "").length > 0 && (
+                          <p>Grade: {textValue(entry.grade)}</p>
+                        )}
+                      </div>
+                    </li>
+                  ))}
                 </ul>
               )}
             </section>

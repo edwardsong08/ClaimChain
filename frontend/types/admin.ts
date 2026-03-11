@@ -23,10 +23,15 @@ export type AdminPendingUser = AdminUser;
 export type AdminClaim = {
   id: number;
   debtorName?: string | null;
+  debtorType?: string | null;
   clientName?: string | null;
   currentAmount?: number | null;
   amount?: number | null;
   status?: string | null;
+  scoreTotal?: number | null;
+  grade?: string | null;
+  extractionSuccessRate?: number | null;
+  submittedAt?: string | null;
 };
 
 export type AdminClaimStatus =
@@ -90,4 +95,18 @@ export type AdminPackageDetail = {
   rulesetId?: number | null;
   rulesetVersion?: number | null;
   claimIds?: number[] | null;
+};
+
+export type AdminAnonymizedClaimView = {
+  claimId?: number | null;
+  jurisdictionState?: string | null;
+  debtorType?: string | null;
+  claimType?: string | null;
+  disputeStatus?: string | null;
+  debtAgeDays?: number | null;
+  amountBand?: string | null;
+  scoreTotal?: number | null;
+  grade?: string | null;
+  extractionSuccessRate?: number | null;
+  docTypesPresent?: string | null;
 };
