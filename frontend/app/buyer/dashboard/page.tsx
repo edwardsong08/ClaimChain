@@ -138,6 +138,7 @@ export default function BuyerDashboardPage() {
                       <p>Status: {statusForDisplay()}</p>
                       <p>Total Claims: {pkg.totalClaims ?? 0}</p>
                       <p>Total Face Value: {formatCurrency(pkg.totalFaceValue)}</p>
+                      <p>Price: {formatCurrency(pkg.price)}</p>
                       <p>Created: {formatDate(pkg.createdAt)}</p>
                     </div>
                     <Link

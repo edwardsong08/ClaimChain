@@ -2,6 +2,7 @@ export type BuyerPackageSummary = {
   id: number;
   totalClaims?: number | null;
   totalFaceValue?: number | null;
+  price?: number | null;
   createdAt?: string | null;
 };
 
@@ -23,6 +24,7 @@ export type BuyerPackageDetail = {
   id: number;
   totalClaims?: number | null;
   totalFaceValue?: number | null;
+  price?: number | null;
   createdAt?: string | null;
   claims?: BuyerPackageClaimSummary[] | null;
 };

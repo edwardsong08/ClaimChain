@@ -38,16 +38,9 @@ function formatCurrency(value: number | null | undefined) {
   return usdFormatter.format(value);
 }
 
-function formatPriceFromCents(value: number | null | undefined, currency: string | null | undefined) {
+function formatPrice(value: number | null | undefined) {
   if (typeof value !== "number") return "N/A";
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: (currency || "USD").toUpperCase(),
-    }).format(value / 100);
-  } catch {
-    return usdFormatter.format(value / 100);
-  }
+  return usdFormatter.format(value);
 }
 
 function formatDate(value: string | null | undefined) {
@@ -428,7 +421,7 @@ export default function AdminPackagesPage() {
                             <p>Total Face Value: {formatCurrency(packageItem.totalFaceValue)}</p>
                             <p>
                               Price:{" "}
-                              {formatPriceFromCents(packageItem.priceCents, packageItem.currency)}
+                              {formatPrice(packageItem.price)}
                             </p>
                             <p>
                               Ruleset:{" "}

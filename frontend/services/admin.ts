@@ -128,6 +128,18 @@ export async function unlistPackage(packageId: number | string, token: string) {
   }
 }
 
+export function setAdminPackagePrice(
+  packageId: number | string,
+  price: number,
+  token: string
+) {
+  return apiFetch(`/api/admin/packages/${packageId}/price`, {
+    method: "POST",
+    headers: getJsonAuthHeaders(token),
+    body: JSON.stringify({ price }),
+  }) as Promise<AdminPackage>;
+}
+
 export function listPackageAnonymizedViews(token: string, packageId: number | string) {
   return apiFetch(`/api/admin/packages/${packageId}/anonymized-views`, {
     method: "GET",

@@ -57,6 +57,7 @@ export type AdminPackage = {
   status?: string | null;
   totalClaims?: number | null;
   totalFaceValue?: number | null;
+  price?: number | null;
   priceCents?: number | null;
   currency?: string | null;
   rulesetId?: number | null;
@@ -87,6 +88,7 @@ export type AdminPackageDetail = {
   status?: string | null;
   totalClaims?: number | null;
   totalFaceValue?: number | null;
+  price?: number | null;
   priceCents?: number | null;
   currency?: string | null;
   notes?: string | null;

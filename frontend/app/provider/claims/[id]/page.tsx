@@ -228,6 +228,8 @@ export default function ClaimDetailPage() {
 
   const shouldRedirectForApproval =
     claimQuery.isError && isApprovalGateForbiddenError(claimQuery.error);
+  const claimError = claimQuery.isError ? claimQuery.error : null;
+  const claimErrorMessage = getErrorMessage(claimError, "Unable to load claim details.");
 
   useEffect(() => {
     if (shouldRedirectForApproval) {
@@ -361,9 +363,7 @@ export default function ClaimDetailPage() {
   if (claimQuery.isError) {
     return (
       <main className="min-h-screen flex items-center justify-center px-6 py-10">
-        <p className="text-sm text-red-600">
-          {getErrorMessage(claimQuery.error, "Unable to load claim details.")}
-        </p>
+        <p className="text-sm text-red-600">{claimErrorMessage}</p>
       </main>
     );
   }
@@ -402,7 +402,7 @@ export default function ClaimDetailPage() {
           </div>
         ) : claimQuery.isError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            {getErrorMessage(claimQuery.error, "Unable to load claim details.")}
+            {claimErrorMessage}
           </div>
         ) : !claimQuery.data ? (
           <div className="rounded-lg border p-4 text-sm text-gray-600">

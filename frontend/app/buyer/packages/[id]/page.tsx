@@ -182,6 +182,7 @@ export default function BuyerPackageDetailPage() {
               <p>
                 Total Face Value: {formatCurrency(packageDetailQuery.data.totalFaceValue)}
               </p>
+              <p>Price: {formatCurrency(packageDetailQuery.data.price)}</p>
               <p>Created: {formatDate(packageDetailQuery.data.createdAt)}</p>
             </div>
           </section>

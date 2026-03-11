@@ -9,6 +9,7 @@ import {
   getAdminPackageDetail,
   listClaimsByStatus,
   listPackageAnonymizedViews,
+  setAdminPackagePrice,
 } from "@/services/admin";
 import type {
   AdminAnonymizedClaimView,
@@ -46,6 +47,21 @@ function textValue(value: string | null | undefined, fallback = "N/A") {
 function formatStatus(value: string | null | undefined) {
   if (!hasText(value)) return "N/A";
   return value.trim().replaceAll("_", " ");
+}
+
+function normalizeStatus(value: string | null | undefined) {
+  if (!hasText(value)) return "";
+  return value.trim().toUpperCase();
+}
+
+function getPricingBlockedMessage(status: string) {
+  if (status === "LISTED") {
+    return "Unlist package before changing price.";
+  }
+  if (status === "SOLD") {
+    return "Sold packages cannot be repriced.";
+  }
+  return "Only READY packages can be priced.";
 }
 
 function formatCurrency(value: number | null | undefined) {
@@ -229,6 +245,8 @@ export default function AdminPackageDetailPage() {
   const queryClient = useQueryClient();
 
   const [feedback, setFeedback] = useState<FeedbackState>(null);
+  const [pricingFeedback, setPricingFeedback] = useState<FeedbackState>(null);
+  const [priceInput, setPriceInput] = useState<string | null>(null);
 
   const idParam = params?.id;
   const packageId = Array.isArray(idParam) ? idParam[0] : idParam;
@@ -324,6 +342,69 @@ export default function AdminPackageDetailPage() {
     },
   });
 
+  const updatePriceMutation = useMutation({
+    mutationFn: () => {
+      if (!token) {
+        throw new Error("You must be logged in as admin.");
+      }
+      if (!packageId) {
+        throw new Error("Missing package id.");
+      }
+      const baseInput =
+        priceInput ??
+        (typeof packageDetailQuery.data?.price === "number"
+          ? String(packageDetailQuery.data.price)
+          : "");
+      const trimmed = baseInput.trim();
+      if (trimmed.length === 0) {
+        throw new Error("Price is required.");
+      }
+      const parsedPrice = Number(trimmed);
+      if (!Number.isFinite(parsedPrice)) {
+        throw new Error("Price must be numeric.");
+      }
+      if (parsedPrice < 0) {
+        throw new Error("Price must be greater than or equal to 0.");
+      }
+      return setAdminPackagePrice(packageId, parsedPrice, token);
+    },
+    onMutate: () => {
+      setPricingFeedback(null);
+    },
+    onSuccess: async (updatedPackage) => {
+      setPricingFeedback({
+        tone: "success",
+        message: "Package price saved.",
+      });
+      if (typeof updatedPackage.price === "number") {
+        setPriceInput(String(updatedPackage.price));
+      } else {
+        setPriceInput(null);
+      }
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-package-detail", packageId, token],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-packages", token],
+      });
+    },
+    onError: (error) => {
+      setPricingFeedback({
+        tone: "error",
+        message: getErrorMessage(error, "Unable to save package price."),
+      });
+    },
+  });
+
+  const normalizedPackageStatus = normalizeStatus(packageDetailQuery.data?.status);
+  const canEditPrice = normalizedPackageStatus === "READY";
+  const pricingBlockedMessage = getPricingBlockedMessage(normalizedPackageStatus);
+  const priceInputValue =
+    priceInput ??
+    (typeof packageDetailQuery.data?.price === "number"
+      ? String(packageDetailQuery.data.price)
+      : "");
+
   if (!isReady) {
     return (
       <main className="min-h-screen px-6 py-10">
@@ -407,6 +488,10 @@ export default function AdminPackageDetailPage() {
                   <span className="text-gray-500">Total Face Value:</span>{" "}
                   {formatCurrency(packageDetailQuery.data.totalFaceValue)}
                 </p>
+                <p>
+                  <span className="text-gray-500">Price:</span>{" "}
+                  {formatCurrency(packageDetailQuery.data.price)}
+                </p>
                 <OptionalMetaRow
                   label="Notes"
                   value={textValue(packageDetailQuery.data.notes, "")}
@@ -428,6 +513,64 @@ export default function AdminPackageDetailPage() {
                   value={packageDetailQuery.data.rulesetVersion}
                 />
               </div>
+            </section>
+
+            <section className="space-y-3 rounded-lg border p-5">
+              <h2 className="text-xl font-semibold">Package Pricing</h2>
+              <p className="text-sm text-gray-600">
+                Current Price: {formatCurrency(packageDetailQuery.data.price)}
+              </p>
+
+              {canEditPrice ? (
+                <form
+                  className="space-y-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    updatePriceMutation.mutate();
+                  }}
+                >
+                  <label htmlFor="package-price" className="block text-sm font-medium">
+                    Price
+                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      id="package-price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      required
+                      value={priceInputValue}
+                      onChange={(event) => setPriceInput(event.target.value)}
+                      className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black sm:w-64"
+                    />
+                    <button
+                      type="submit"
+                      disabled={updatePriceMutation.isPending}
+                      className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                    >
+                      {updatePriceMutation.isPending
+                        ? "Saving..."
+                        : typeof packageDetailQuery.data.price === "number"
+                          ? "Update Price"
+                          : "Save Price"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <p className="text-sm text-gray-600">{pricingBlockedMessage}</p>
+              )}
+
+              {pricingFeedback && (
+                <p
+                  className={`text-sm ${
+                    pricingFeedback.tone === "success"
+                      ? "text-green-600"
+                      : "text-red-600"
+                  }`}
+                >
+                  {pricingFeedback.message}
+                </p>
+              )}
             </section>
 
             <section className="space-y-3 rounded-lg border p-5">
