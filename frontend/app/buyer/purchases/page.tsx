@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthSession } from "@/hooks/use-auth-session";
 import { isApprovalGateForbiddenError } from "@/lib/api-error-utils";
-import { listBuyerPackages } from "@/services/buyer";
+import { listBuyerPurchasedPackages } from "@/services/buyer";
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -22,7 +22,12 @@ function formatDate(value: string | null | undefined) {
   if (!value) return "N/A";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString();
+  return parsed.toLocaleString();
+}
+
+function formatStatus(value: string | null | undefined) {
+  if (!value) return "N/A";
+  return value.replaceAll("_", " ");
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -38,11 +43,9 @@ function getErrorMessage(error: unknown, fallback: string) {
     if (typeof parsed.message === "string" && parsed.message.length > 0) {
       return parsed.message;
     }
-
     if (typeof parsed.error === "string" && parsed.error.length > 0) {
       return parsed.error;
     }
-
     if (Array.isArray(parsed.details) && parsed.details.length > 0) {
       return parsed.details[0];
     }
@@ -53,27 +56,23 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error.message || fallback;
 }
 
-function statusForDisplay() {
-  return "LISTED";
-}
-
-export default function BuyerDashboardPage() {
+export default function BuyerPurchasedPackagesPage() {
   const router = useRouter();
   const { token, isReady, isAuthenticated } = useAuthSession();
 
-  const packagesQuery = useQuery({
-    queryKey: ["buyer-packages", token],
+  const purchasesQuery = useQuery({
+    queryKey: ["buyer-purchased-packages", token],
     queryFn: () => {
       if (!token) {
         throw new Error("You must be logged in as buyer.");
       }
-      return listBuyerPackages(token);
+      return listBuyerPurchasedPackages(token);
     },
     enabled: isReady && isAuthenticated && Boolean(token),
   });
 
   const shouldRedirectForApproval =
-    packagesQuery.isError && isApprovalGateForbiddenError(packagesQuery.error);
+    purchasesQuery.isError && isApprovalGateForbiddenError(purchasesQuery.error);
 
   useEffect(() => {
     if (shouldRedirectForApproval) {
@@ -93,21 +92,21 @@ export default function BuyerDashboardPage() {
     return (
       <main className="min-h-screen flex items-center justify-center px-6 py-10">
         <p className="text-sm text-red-600">
-          You must be logged in as buyer to view marketplace packages.
+          You must be logged in as buyer to view purchased packages.
         </p>
       </main>
     );
   }
 
-  if (packagesQuery.isPending || shouldRedirectForApproval) {
+  if (purchasesQuery.isPending || shouldRedirectForApproval) {
     return <main className="min-h-screen" aria-busy="true" />;
   }
 
-  if (packagesQuery.isError) {
+  if (purchasesQuery.isError) {
     return (
       <main className="min-h-screen flex items-center justify-center px-6 py-10">
         <p className="text-sm text-red-600">
-          {getErrorMessage(packagesQuery.error, "Failed to load listed packages.")}
+          {getErrorMessage(purchasesQuery.error, "Failed to load purchased packages.")}
         </p>
       </main>
     );
@@ -118,42 +117,40 @@ export default function BuyerDashboardPage() {
       <div className="mx-auto w-full max-w-5xl space-y-6">
         <header className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="text-3xl font-semibold">Buyer Marketplace</h1>
+            <h1 className="text-3xl font-semibold">Purchased Packages</h1>
             <Link
-              href="/buyer/purchases"
+              href="/buyer/dashboard"
               className="inline-flex rounded-md border px-3 py-1.5 text-sm font-medium"
             >
-              Purchased Packages
+              Back to Marketplace
             </Link>
           </div>
           <p className="text-sm text-gray-600">
-            Browse currently listed claim packages available for review.
+            Packages you have purchased and can access.
           </p>
         </header>
 
         <section className="space-y-3 rounded-lg border p-5">
-          <h2 className="text-xl font-semibold">Listed Packages</h2>
-
-          {packagesQuery.data.length === 0 ? (
-            <p className="text-sm text-gray-600">No listed packages are available right now.</p>
+          {purchasesQuery.data.length === 0 ? (
+            <p className="text-sm text-gray-600">You have not purchased any packages yet.</p>
           ) : (
             <ul className="space-y-2">
-              {packagesQuery.data.map((pkg) => (
+              {purchasesQuery.data.map((pkg) => (
                 <li key={pkg.id} className="rounded-md border p-3">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="space-y-1 text-sm">
                       <p>Package ID: {pkg.id}</p>
-                      <p>Status: {statusForDisplay()}</p>
+                      <p>Status: {formatStatus(pkg.status)}</p>
                       <p>Total Claims: {pkg.totalClaims ?? 0}</p>
                       <p>Total Face Value: {formatCurrency(pkg.totalFaceValue)}</p>
                       <p>Price: {formatCurrency(pkg.price)}</p>
-                      <p>Created: {formatDate(pkg.createdAt)}</p>
+                      <p>Purchased: {formatDate(pkg.purchasedAt)}</p>
                     </div>
                     <Link
-                      href={`/buyer/packages/${pkg.id}`}
+                      href={`/buyer/purchases/${pkg.id}`}
                       className="inline-flex rounded-md border px-3 py-1.5 text-sm font-medium"
                     >
-                      View Package
+                      View Purchased Package
                     </Link>
                   </div>
                 </li>

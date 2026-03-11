@@ -5,6 +5,7 @@ export type BuyerPackageSummary = {
   totalFaceValue?: number | null;
   price?: number | null;
   createdAt?: string | null;
+  purchasedAt?: string | null;
 };
 
 export type BuyerPackageClaimSummary = {
@@ -28,6 +29,7 @@ export type BuyerPackageDetail = {
   totalFaceValue?: number | null;
   price?: number | null;
   createdAt?: string | null;
+  purchasedAt?: string | null;
   claims?: BuyerPackageClaimSummary[] | null;
 };
 

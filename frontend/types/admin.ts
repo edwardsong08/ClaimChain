@@ -58,6 +58,9 @@ export type AdminPackage = {
   totalClaims?: number | null;
   totalFaceValue?: number | null;
   price?: number | null;
+  purchaserUserId?: number | null;
+  purchaserEmail?: string | null;
+  purchasedAt?: string | null;
   priceCents?: number | null;
   currency?: string | null;
   rulesetId?: number | null;
@@ -89,6 +92,9 @@ export type AdminPackageDetail = {
   totalClaims?: number | null;
   totalFaceValue?: number | null;
   price?: number | null;
+  purchaserUserId?: number | null;
+  purchaserEmail?: string | null;
+  purchasedAt?: string | null;
   priceCents?: number | null;
   currency?: string | null;
   notes?: string | null;

@@ -6,10 +6,12 @@ import java.time.Instant;
 public class BuyerPackageSummaryResponseDTO {
 
     private Long id;
+    private String status;
     private Integer totalClaims;
     private BigDecimal totalFaceValue;
     private BigDecimal price;
     private Instant createdAt;
+    private Instant purchasedAt;
 
     public Long getId() {
         return id;
@@ -49,5 +51,21 @@ public class BuyerPackageSummaryResponseDTO {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public Instant getPurchasedAt() {
+        return purchasedAt;
+    }
+
+    public void setPurchasedAt(Instant purchasedAt) {
+        this.purchasedAt = purchasedAt;
     }
 }

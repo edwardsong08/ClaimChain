@@ -500,9 +500,21 @@ export default function AdminPackageDetailPage() {
                   label="Created"
                   value={formatDateTime(packageDetailQuery.data.createdAt)}
                 />
+                <OptionalMetaRow
+                  label="Purchased At"
+                  value={formatDateTime(packageDetailQuery.data.purchasedAt)}
+                />
                 <OptionalNumberMetaRow
                   label="Created By User ID"
                   value={packageDetailQuery.data.createdByUserId}
+                />
+                <OptionalNumberMetaRow
+                  label="Purchaser User ID"
+                  value={packageDetailQuery.data.purchaserUserId}
+                />
+                <OptionalMetaRow
+                  label="Purchaser Email"
+                  value={textValue(packageDetailQuery.data.purchaserEmail, "")}
                 />
                 <OptionalNumberMetaRow
                   label="Ruleset ID"

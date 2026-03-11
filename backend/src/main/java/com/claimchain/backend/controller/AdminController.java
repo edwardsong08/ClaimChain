@@ -19,7 +19,10 @@ import com.claimchain.backend.model.Claim;
 import com.claimchain.backend.model.Package;
 import com.claimchain.backend.model.PackageClaim;
 import com.claimchain.backend.model.PackageStatus;
+import com.claimchain.backend.model.Purchase;
+import com.claimchain.backend.model.PurchaseStatus;
 import com.claimchain.backend.model.User;
+import com.claimchain.backend.repository.PurchaseRepository;
 import com.claimchain.backend.repository.UserRepository;
 import com.claimchain.backend.service.AdminService;
 import com.claimchain.backend.service.AnonymizedViewService;
@@ -51,6 +54,7 @@ public class AdminController {
     private final ClaimScoringPersistenceService claimScoringPersistenceService;
     private final PackageService packageService;
     private final AnonymizedViewService anonymizedViewService;
+    private final PurchaseRepository purchaseRepository;
     private final UserRepository userRepository;
 
     public AdminController(
@@ -60,6 +64,7 @@ public class AdminController {
             ClaimScoringPersistenceService claimScoringPersistenceService,
             PackageService packageService,
             AnonymizedViewService anonymizedViewService,
+            PurchaseRepository purchaseRepository,
             UserRepository userRepository
     ) {
         this.authService = authService;
@@ -68,6 +73,7 @@ public class AdminController {
         this.claimScoringPersistenceService = claimScoringPersistenceService;
         this.packageService = packageService;
         this.anonymizedViewService = anonymizedViewService;
+        this.purchaseRepository = purchaseRepository;
         this.userRepository = userRepository;
     }
 
@@ -356,6 +362,7 @@ public class AdminController {
         dto.setTotalFaceValue(packageEntity.getTotalFaceValue());
         dto.setPrice(toPrice(packageEntity.getPriceCents()));
         dto.setCreatedAt(packageEntity.getCreatedAt());
+        applySoldPackagePurchaserInfo(packageEntity, dto);
         return dto;
     }
 
@@ -371,6 +378,7 @@ public class AdminController {
         dto.setCreatedByUserId(packageEntity.getCreatedByUser() == null ? null : packageEntity.getCreatedByUser().getId());
         dto.setRulesetId(packageEntity.getRuleset() == null ? null : packageEntity.getRuleset().getId());
         dto.setRulesetVersion(packageEntity.getRulesetVersion());
+        applySoldPackagePurchaserInfo(packageEntity, dto);
 
         List<Long> claimIds = packageEntity.getPackageClaims().stream()
                 .sorted(Comparator.comparing(
@@ -384,6 +392,40 @@ public class AdminController {
                 .toList();
         dto.setClaimIds(claimIds);
         return dto;
+    }
+
+    private void applySoldPackagePurchaserInfo(Package packageEntity, PackageResponseDTO dto) {
+        Purchase purchase = resolveSoldPackagePurchase(packageEntity);
+        if (purchase == null) {
+            return;
+        }
+        User purchaser = purchase.getBuyerUser();
+        dto.setPurchaserUserId(purchaser == null ? null : purchaser.getId());
+        dto.setPurchaserEmail(purchaser == null ? null : purchaser.getEmail());
+        dto.setPurchasedAt(purchase.getUpdatedAt());
+    }
+
+    private void applySoldPackagePurchaserInfo(Package packageEntity, PackageDetailResponseDTO dto) {
+        Purchase purchase = resolveSoldPackagePurchase(packageEntity);
+        if (purchase == null) {
+            return;
+        }
+        User purchaser = purchase.getBuyerUser();
+        dto.setPurchaserUserId(purchaser == null ? null : purchaser.getId());
+        dto.setPurchaserEmail(purchaser == null ? null : purchaser.getEmail());
+        dto.setPurchasedAt(purchase.getUpdatedAt());
+    }
+
+    private Purchase resolveSoldPackagePurchase(Package packageEntity) {
+        if (packageEntity == null || packageEntity.getStatus() != PackageStatus.SOLD) {
+            return null;
+        }
+        return purchaseRepository
+                .findTopByPackageEntityIdAndStatusOrderByUpdatedAtDesc(
+                        packageEntity.getId(),
+                        PurchaseStatus.PAID
+                )
+                .orElse(null);
     }
 
     private PackageBuildResponseDTO toPackageBuildResponse(PackageService.BuildPackageResult result) {

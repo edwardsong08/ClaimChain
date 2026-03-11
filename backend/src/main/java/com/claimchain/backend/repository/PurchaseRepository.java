@@ -5,6 +5,7 @@ import com.claimchain.backend.model.PurchaseStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -18,5 +19,15 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
             PurchaseStatus status
     );
 
+    Optional<Purchase> findTopByBuyerUserIdAndPackageEntityIdAndStatusOrderByUpdatedAtDesc(
+            Long buyerId,
+            Long packageId,
+            PurchaseStatus status
+    );
+
     Optional<Purchase> findByBuyerUserIdAndIdempotencyKey(Long buyerId, String key);
+
+    List<Purchase> findByBuyerUserIdAndStatusOrderByUpdatedAtDesc(Long buyerId, PurchaseStatus status);
+
+    Optional<Purchase> findTopByPackageEntityIdAndStatusOrderByUpdatedAtDesc(Long packageId, PurchaseStatus status);
 }

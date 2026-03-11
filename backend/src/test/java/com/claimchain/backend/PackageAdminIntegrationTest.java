@@ -5,11 +5,14 @@ import com.claimchain.backend.model.Claim;
 import com.claimchain.backend.model.ClaimStatus;
 import com.claimchain.backend.model.Package;
 import com.claimchain.backend.model.PackageStatus;
+import com.claimchain.backend.model.Purchase;
+import com.claimchain.backend.model.PurchaseStatus;
 import com.claimchain.backend.model.Role;
 import com.claimchain.backend.model.User;
 import com.claimchain.backend.model.VerificationStatus;
 import com.claimchain.backend.repository.ClaimRepository;
 import com.claimchain.backend.repository.PackageRepository;
+import com.claimchain.backend.repository.PurchaseRepository;
 import com.claimchain.backend.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -65,6 +68,9 @@ class PackageAdminIntegrationTest {
 
     @Autowired
     private PackageRepository packageRepository;
+
+    @Autowired
+    private PurchaseRepository purchaseRepository;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -328,6 +334,45 @@ class PackageAdminIntegrationTest {
                 .andReturn();
 
         assertApiError(invalid, "VALIDATION_ERROR");
+    }
+
+    @Test
+    void soldPackageIncludesPurchaserInfoInAdminListAndDetail() throws Exception {
+        User buyer = createUser("buyer@package-admin-test.local", Role.COLLECTION_AGENCY, VerificationStatus.APPROVED);
+        Long packageId = createPackageWithStatus(PackageStatus.SOLD);
+        Package soldPackage = packageRepository.findById(packageId).orElseThrow();
+
+        Purchase paidPurchase = new Purchase();
+        paidPurchase.setPackageEntity(soldPackage);
+        paidPurchase.setBuyerUser(buyer);
+        paidPurchase.setStatus(PurchaseStatus.PAID);
+        paidPurchase.setAmountCents(19999L);
+        paidPurchase.setCurrency("usd");
+        purchaseRepository.saveAndFlush(paidPurchase);
+
+        mockMvc.perform(
+                        get("/api/admin/packages/{id}", packageId)
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(packageId))
+                .andExpect(jsonPath("$.status").value(PackageStatus.SOLD.name()))
+                .andExpect(jsonPath("$.purchaserUserId").value(buyer.getId()))
+                .andExpect(jsonPath("$.purchaserEmail").value(buyer.getEmail()))
+                .andExpect(jsonPath("$.purchasedAt").isNotEmpty());
+
+        mockMvc.perform(
+                        get("/api/admin/packages")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].id").value(packageId))
+                .andExpect(jsonPath("$[0].status").value(PackageStatus.SOLD.name()))
+                .andExpect(jsonPath("$[0].purchaserUserId").value(buyer.getId()))
+                .andExpect(jsonPath("$[0].purchaserEmail").value(buyer.getEmail()))
+                .andExpect(jsonPath("$[0].purchasedAt").isNotEmpty());
     }
 
     private Long createDraftPackage(String notes) throws Exception {

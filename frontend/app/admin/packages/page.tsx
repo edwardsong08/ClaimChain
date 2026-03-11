@@ -50,6 +50,13 @@ function formatDate(value: string | null | undefined) {
   return parsed.toLocaleDateString();
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "N/A";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+}
+
 function textValue(value: string | null | undefined, fallback = "N/A") {
   if (!value || value.trim().length === 0) return fallback;
   return value;
@@ -431,6 +438,12 @@ export default function AdminPackagesPage() {
                               )}
                             </p>
                             <p>Created: {formatDate(packageItem.createdAt)}</p>
+                            {status === "SOLD" && (
+                              <>
+                                <p>Purchaser: {textValue(packageItem.purchaserEmail)}</p>
+                                <p>Purchased: {formatDateTime(packageItem.purchasedAt)}</p>
+                              </>
+                            )}
                           </div>
 
                           <div className="flex flex-wrap gap-2">

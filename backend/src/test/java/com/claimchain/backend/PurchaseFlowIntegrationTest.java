@@ -249,6 +249,26 @@ class PurchaseFlowIntegrationTest {
                 )
                 .andExpect(status().isNotFound());
 
+        mockMvc.perform(
+                        get("/api/buyer/purchases")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + buyerToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].id").value(listedPackage.getId()))
+                .andExpect(jsonPath("$[0].status").value(PackageStatus.SOLD.name()))
+                .andExpect(jsonPath("$[0].purchasedAt").isNotEmpty());
+
+        mockMvc.perform(
+                        get("/api/buyer/purchases/{id}", listedPackage.getId())
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + buyerToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value(listedPackage.getId()))
+                .andExpect(jsonPath("$.status").value(PackageStatus.SOLD.name()))
+                .andExpect(jsonPath("$.purchasedAt").isNotEmpty());
+
         Integer purchaseEventCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM purchase_events WHERE stripe_event_id = ?",
                 Integer.class,
@@ -304,6 +324,16 @@ class PurchaseFlowIntegrationTest {
                 "evt_unpaid_1"
         );
         assertThat(purchaseEventCount).isEqualTo(1);
+
+        mockMvc.perform(
+                        get("/api/buyer/purchases")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + buyerToken)
+                )
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$").isEmpty());
+
         assertAuditCount("PURCHASE_PAID", "PURCHASE", purchase.getId(), 0);
         assertAuditCount("ENTITLEMENT_GRANTED", "PACKAGE", listedPackage.getId(), 0);
         assertAuditCount("PACKAGE_SOLD", "PACKAGE", listedPackage.getId(), 0);

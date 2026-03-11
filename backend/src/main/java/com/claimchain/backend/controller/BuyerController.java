@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.security.Principal;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -61,7 +62,19 @@ public class BuyerController {
         requireApprovedBuyerAccess(principal);
         List<BuyerPackageSummaryResponseDTO> response = buyerPackageService.listListedPackages()
                 .stream()
-                .map(this::toBuyerPackageSummary)
+                .map(packageEntity -> toBuyerPackageSummary(packageEntity, null))
+                .toList();
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/purchases")
+    @PreAuthorize("hasRole('COLLECTION_AGENCY')")
+    public ResponseEntity<List<BuyerPackageSummaryResponseDTO>> listPurchasedPackages(Principal principal) {
+        requireApprovedBuyerAccess(principal);
+        Long buyerUserId = requirePrincipalUserId(principal);
+        List<BuyerPackageSummaryResponseDTO> response = buyerPackageService.listPurchasedPackages(buyerUserId)
+                .stream()
+                .map(summary -> toBuyerPackageSummary(summary.getPackageEntity(), summary.getPurchasedAt()))
                 .toList();
         return ResponseEntity.ok(response);
     }
@@ -71,7 +84,29 @@ public class BuyerController {
     public ResponseEntity<BuyerPackageDetailResponseDTO> getListedPackage(@PathVariable Long id, Principal principal) {
         requireApprovedBuyerAccess(principal);
         BuyerPackageService.ListedPackageDetail detail = buyerPackageService.getListedPackageWithAnonymizedViews(id);
-        BuyerPackageDetailResponseDTO response = toBuyerPackageDetail(detail);
+        BuyerPackageDetailResponseDTO response = toBuyerPackageDetail(
+                detail.getPackageEntity(),
+                detail.getAnonymizedViews(),
+                null
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/purchases/{id}")
+    @PreAuthorize("hasRole('COLLECTION_AGENCY')")
+    public ResponseEntity<BuyerPackageDetailResponseDTO> getPurchasedPackage(
+            @PathVariable Long id,
+            Principal principal
+    ) {
+        requireApprovedBuyerAccess(principal);
+        Long buyerUserId = requirePrincipalUserId(principal);
+        BuyerPackageService.PurchasedPackageDetail detail = buyerPackageService
+                .getPurchasedPackageWithAnonymizedViews(id, buyerUserId);
+        BuyerPackageDetailResponseDTO response = toBuyerPackageDetail(
+                detail.getPackageEntity(),
+                detail.getAnonymizedViews(),
+                detail.getPurchasedAt()
+        );
         return ResponseEntity.ok(response);
     }
 
@@ -131,28 +166,35 @@ public class BuyerController {
                 .body(body);
     }
 
-    private BuyerPackageSummaryResponseDTO toBuyerPackageSummary(Package packageEntity) {
+    private BuyerPackageSummaryResponseDTO toBuyerPackageSummary(Package packageEntity, Instant purchasedAt) {
         BuyerPackageSummaryResponseDTO dto = new BuyerPackageSummaryResponseDTO();
         dto.setId(packageEntity.getId());
+        dto.setStatus(packageEntity.getStatus() == null ? null : packageEntity.getStatus().name());
         dto.setTotalClaims(packageEntity.getTotalClaims());
         dto.setTotalFaceValue(packageEntity.getTotalFaceValue());
         dto.setPrice(toPrice(packageEntity.getPriceCents()));
         dto.setCreatedAt(packageEntity.getCreatedAt());
+        dto.setPurchasedAt(purchasedAt);
         return dto;
     }
 
-    private BuyerPackageDetailResponseDTO toBuyerPackageDetail(BuyerPackageService.ListedPackageDetail detail) {
-        Package packageEntity = detail.getPackageEntity();
-        List<AnonymizedClaimViewResponseDTO> claims = detail.getAnonymizedViews().stream()
+    private BuyerPackageDetailResponseDTO toBuyerPackageDetail(
+            Package packageEntity,
+            List<AnonymizedClaimView> anonymizedViews,
+            Instant purchasedAt
+    ) {
+        List<AnonymizedClaimViewResponseDTO> claims = anonymizedViews.stream()
                 .map(this::toAnonymizedClaimViewResponse)
                 .toList();
 
         BuyerPackageDetailResponseDTO dto = new BuyerPackageDetailResponseDTO();
         dto.setId(packageEntity.getId());
+        dto.setStatus(packageEntity.getStatus() == null ? null : packageEntity.getStatus().name());
         dto.setTotalClaims(packageEntity.getTotalClaims());
         dto.setTotalFaceValue(packageEntity.getTotalFaceValue());
         dto.setPrice(toPrice(packageEntity.getPriceCents()));
         dto.setCreatedAt(packageEntity.getCreatedAt());
+        dto.setPurchasedAt(purchasedAt);
         dto.setClaims(claims);
         return dto;
     }

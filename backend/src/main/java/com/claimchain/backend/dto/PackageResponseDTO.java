@@ -10,6 +10,9 @@ public class PackageResponseDTO {
     private Integer totalClaims;
     private BigDecimal totalFaceValue;
     private BigDecimal price;
+    private Long purchaserUserId;
+    private String purchaserEmail;
+    private Instant purchasedAt;
     private Instant createdAt;
 
     public Long getId() {
@@ -58,5 +61,29 @@ public class PackageResponseDTO {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public Long getPurchaserUserId() {
+        return purchaserUserId;
+    }
+
+    public void setPurchaserUserId(Long purchaserUserId) {
+        this.purchaserUserId = purchaserUserId;
+    }
+
+    public String getPurchaserEmail() {
+        return purchaserEmail;
+    }
+
+    public void setPurchaserEmail(String purchaserEmail) {
+        this.purchaserEmail = purchaserEmail;
+    }
+
+    public Instant getPurchasedAt() {
+        return purchasedAt;
+    }
+
+    public void setPurchasedAt(Instant purchasedAt) {
+        this.purchasedAt = purchasedAt;
     }
 }

@@ -14,6 +14,9 @@ public class PackageDetailResponseDTO {
     private String notes;
     private Instant createdAt;
     private Long createdByUserId;
+    private Long purchaserUserId;
+    private String purchaserEmail;
+    private Instant purchasedAt;
     private Long rulesetId;
     private Integer rulesetVersion;
     private List<Long> claimIds;
@@ -80,6 +83,30 @@ public class PackageDetailResponseDTO {
 
     public void setCreatedByUserId(Long createdByUserId) {
         this.createdByUserId = createdByUserId;
+    }
+
+    public Long getPurchaserUserId() {
+        return purchaserUserId;
+    }
+
+    public void setPurchaserUserId(Long purchaserUserId) {
+        this.purchaserUserId = purchaserUserId;
+    }
+
+    public String getPurchaserEmail() {
+        return purchaserEmail;
+    }
+
+    public void setPurchaserEmail(String purchaserEmail) {
+        this.purchaserEmail = purchaserEmail;
+    }
+
+    public Instant getPurchasedAt() {
+        return purchasedAt;
+    }
+
+    public void setPurchasedAt(Instant purchasedAt) {
+        this.purchasedAt = purchasedAt;
     }
 
     public Long getRulesetId() {
